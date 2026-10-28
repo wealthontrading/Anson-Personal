@@ -1,0 +1,6 @@
+{
+  "name": "Anson & Dona Family Expense Tracker",
+  "description": "Modern, responsive personal and family finance tracker for Anson and Dona with income, expense, bank accounts, cash, EMI, and savings analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

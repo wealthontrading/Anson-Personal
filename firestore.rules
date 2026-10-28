@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow read and write for Anson & Dona Family Tracker shared data
+    match /bank_accounts/{document=**} {
+      allow read, write: if true;
+    }
+    match /cash_wallets/{document=**} {
+      allow read, write: if true;
+    }
+    match /loans/{document=**} {
+      allow read, write: if true;
+    }
+    match /transactions/{document=**} {
+      allow read, write: if true;
+    }
+    match /custom_categories/{document=**} {
+      allow read, write: if true;
+    }
+    match /users/{document=**} {
+      allow read, write: if true;
+    }
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "entities": {
+    "bank_accounts": {
+      "title": "Bank Account",
+      "description": "Family and personal bank accounts for Anson and Dona",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "bankName": { "type": "string" },
+        "accountNumberMasked": { "type": "string" },
+        "owner": { "type": "string", "enum": ["Anson", "Dona", "Joint"] },
+        "openingBalance": { "type": "number" },
+        "currentBalance": { "type": "number" },
+        "colorTheme": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "bankName", "owner", "currentBalance"]
+    },
+    "cash_wallets": {
+      "title": "Cash Wallet",
+      "description": "Cash in hand wallets for Anson and Dona",
+      "type": "object",
+      "properties": {
+        "owner": { "type": "string", "enum": ["Anson", "Dona"] },
+        "balance": { "type": "number" },
+        "lastUpdated": { "type": "string" }
+      },
+      "required": ["owner", "balance"]
+    },
+    "loans": {
+      "title": "Loan",
+      "description": "Loans and EMIs tracked by Anson and Dona",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "owner": { "type": "string", "enum": ["Anson", "Dona"] },
+        "originalAmount": { "type": "number" },
+        "outstandingPrincipal": { "type": "number" },
+        "monthlyEmi": { "type": "number" },
+        "interestRate": { "type": "number" },
+        "startDate": { "type": "string" },
+        "emiDueDay": { "type": "number" },
+        "tenureMonths": { "type": "number" },
+        "emisPaid": { "type": "number" },
+        "emisRemaining": { "type": "number" },
+        "lenderName": { "type": "string" },
+        "linkedAccountId": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "closed"] }
+      },
+      "required": ["id", "name", "owner", "monthlyEmi", "outstandingPrincipal"]
+    },
+    "transactions": {
+      "title": "Transaction",
+      "description": "Financial transactions including income, expense, transfers, and EMI payments",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["income", "expense", "transfer", "emi_payment"] },
+        "title": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "person": { "type": "string", "enum": ["Anson", "Dona"] },
+        "category": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "fromAccountId": { "type": "string" },
+        "toAccountId": { "type": "string" },
+        "fromCashPerson": { "type": "string" },
+        "toCashPerson": { "type": "string" },
+        "notes": { "type": "string" },
+        "receiptImage": { "type": "string" },
+        "loanId": { "type": "string" },
+        "transferType": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "type", "title", "amount", "date", "person"]
+    },
+    "custom_categories": {
+      "title": "Custom Category",
+      "description": "User created custom categories for expenses and income",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["expense", "income"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "type"]
+    },
+    "users": {
+      "title": "User Profile",
+      "description": "Profiles and PIN security for Anson and Dona",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "avatarBg": { "type": "string" },
+        "pin": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    }
+  }
+}
