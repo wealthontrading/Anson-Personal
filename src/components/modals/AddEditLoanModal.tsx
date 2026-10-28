@@ -6,7 +6,7 @@ import { X, Landmark, Check, Plus } from 'lucide-react';
 
 interface AddEditLoanModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (saved?: boolean) => void;
   editLoanData?: Loan | null;
 }
 
@@ -125,7 +125,7 @@ export const AddEditLoanModal: React.FC<AddEditLoanModalProps> = ({
       addLoan({
         name: isCustomType && customTypeInput.trim() ? `${name.trim()} (${customTypeInput.trim()})` : name.trim() || 'New Loan',
         type: finalType,
-        owner,
+        owner: currentUser,
         originalAmount: orig,
         outstandingPrincipal: out,
         monthlyEmi: emi,
@@ -141,7 +141,7 @@ export const AddEditLoanModal: React.FC<AddEditLoanModalProps> = ({
       });
     }
 
-    onClose();
+    onClose(true);
   };
 
   return (
@@ -155,7 +155,7 @@ export const AddEditLoanModal: React.FC<AddEditLoanModalProps> = ({
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onClose()}
               className="p-1.5 -ml-1.5 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
               title="Close window"
             >
@@ -173,7 +173,7 @@ export const AddEditLoanModal: React.FC<AddEditLoanModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => onClose()}
             className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 transition"
           >
             Close
@@ -241,23 +241,13 @@ export const AddEditLoanModal: React.FC<AddEditLoanModalProps> = ({
 
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                Loan Owner *
+                Loan Owner (Logged-in Account)
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                {(['Anson', 'Dona'] as Person[]).map((p) => (
-                  <button
-                    type="button"
-                    key={p}
-                    onClick={() => setOwner(p)}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition ${
-                      owner === p
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                        : 'bg-white border-slate-200 text-slate-600'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
+              <div className="py-2.5 px-3 bg-slate-50 border border-slate-200/90 rounded-xl flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900">{currentUser}</span>
+                <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-md">
+                  Account Locked
+                </span>
               </div>
             </div>
           </div>
@@ -415,7 +405,7 @@ export const AddEditLoanModal: React.FC<AddEditLoanModalProps> = ({
           <div className="pt-2 flex items-center gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onClose()}
               className="w-1/3 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-2xl transition"
             >
               Cancel

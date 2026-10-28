@@ -2,7 +2,7 @@ import React from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { DashboardView, Person } from '../../types/finance';
 import { formatMonthName } from '../../utils/formatters';
-import { Users, User, Calendar, Lock, Plus, Shield, Smartphone, Zap } from 'lucide-react';
+import { Users, User, Calendar, Lock, Plus, Shield, Smartphone, Zap, LogOut } from 'lucide-react';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 
 interface DashboardHeaderProps {
@@ -22,7 +22,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
     selectedMonth,
     setSelectedMonth,
     currentUser,
-    switchUser,
+    logoutUser,
     lockApp,
     users,
   } = useFinance();
@@ -108,28 +108,28 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             </select>
           </div>
 
-          {/* User Profile switcher & Lock */}
+          {/* Logged In User Profile & Device Lock */}
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 rounded-xl p-1">
-            {(['Anson', 'Dona'] as Person[]).map((person) => {
-              const isActive = currentUser === person;
-              return (
-                <button
-                  key={person}
-                  onClick={() => switchUser(person)}
-                  className={`text-[11px] font-bold py-1 px-2.5 rounded-lg transition flex items-center gap-1 ${
-                    isActive
-                      ? person === 'Anson'
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                  title={`Logged in as ${person}`}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-white/80" />
-                  {person}
-                </button>
-              );
-            })}
+            <div
+              className={`text-[11px] font-extrabold py-1 px-2.5 rounded-lg flex items-center gap-1.5 shadow-2xs ${
+                currentUser === 'Anson'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-emerald-600 text-white'
+              }`}
+              title={`Device locked to ${currentUser}`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-white/90" />
+              <span>{currentUser}</span>
+            </div>
+
+            <button
+              onClick={logoutUser}
+              className="text-[10px] font-bold text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg hover:bg-slate-200/60 transition flex items-center gap-1"
+              title="Switch to other profile on this device"
+            >
+              <LogOut className="w-3 h-3 text-slate-400" />
+              <span className="hidden sm:inline">Switch</span>
+            </button>
 
             <button
               onClick={lockApp}

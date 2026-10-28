@@ -5,7 +5,7 @@ import { X, Building2, Check, Plus } from 'lucide-react';
 
 interface AddEditAccountModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (saved?: boolean) => void;
   editAccount?: BankAccount | null;
 }
 
@@ -81,7 +81,7 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
       });
     }
 
-    onClose();
+    onClose(true);
   };
 
   const commonBanks = [
@@ -107,7 +107,7 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onClose()}
               className="p-1.5 -ml-1.5 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
               title="Close window"
             >
@@ -125,7 +125,7 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => onClose()}
             className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 transition"
           >
             Close
@@ -193,13 +193,13 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
             )}
           </div>
 
-          {/* Account Owner: Anson, Dona, or Joint */}
+          {/* Account Owner: Logged-in Profile or Joint */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-              Account Owner *
+              Account Owner (Logged-in Profile or Joint) *
             </label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['Anson', 'Dona', 'Joint'] as const).map((o) => (
+            <div className="grid grid-cols-2 gap-2">
+              {([currentUser, 'Joint'] as const).map((o) => (
                 <button
                   type="button"
                   key={o}
@@ -210,7 +210,7 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
                       : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                   }`}
                 >
-                  {o}
+                  {o === currentUser ? `${o} (Your Account)` : 'Joint Account'}
                 </button>
               ))}
             </div>
@@ -260,7 +260,7 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
           <div className="pt-2 flex items-center gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onClose()}
               className="w-1/3 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-2xl transition"
             >
               Cancel

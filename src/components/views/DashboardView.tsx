@@ -2,6 +2,7 @@ import React from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { IncomeExpenseChart } from '../dashboard/IncomeExpenseChart';
 import { CategoryDonutChart } from '../dashboard/CategoryDonutChart';
+import { CategoryBudgetProgressCard } from '../dashboard/CategoryBudgetProgressCard';
 import {
   formatDateDDMMYYYY,
   formatINR,
@@ -11,6 +12,7 @@ import {
 import {
   Coins,
   Receipt,
+  IndianRupee,
   Building2,
   Wallet,
   PiggyBank,
@@ -22,12 +24,14 @@ import {
   ChevronRight,
   PlusCircle,
   Plus,
+  Target,
 } from 'lucide-react';
 import { Transaction } from '../../types/finance';
 
 interface DashboardViewProps {
   onOpenQuickAction: () => void;
   onOpenActionType: (action: 'income' | 'expense' | 'transfer' | 'emi') => void;
+  onOpenBudgetModal: () => void;
   onSelectTab: (tab: any) => void;
   onViewReceipt: (imgUrl: string, title: string) => void;
 }
@@ -35,6 +39,7 @@ interface DashboardViewProps {
 export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenQuickAction,
   onOpenActionType,
+  onOpenBudgetModal,
   onSelectTab,
   onViewReceipt,
 }) => {
@@ -147,6 +152,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <Building2 className="w-3.5 h-3.5 text-blue-600" />
             <span>Transfer</span>
           </button>
+          <button
+            onClick={onOpenBudgetModal}
+            className="px-3.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100/80 text-indigo-700 border border-indigo-200 text-xs font-bold transition flex items-center gap-1.5"
+          >
+            <Target className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Set Budgets</span>
+          </button>
         </div>
       </div>
 
@@ -192,8 +204,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
               Total Income
             </span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-black text-sm">
-              ₹
+            <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <IndianRupee className="w-4 h-4 stroke-[2.5]" />
             </div>
           </div>
           <div>
@@ -213,7 +225,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Total Expenses
             </span>
             <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
-              <Receipt className="w-4 h-4" />
+              <IndianRupee className="w-4 h-4 stroke-[2.5]" />
             </div>
           </div>
           <div>
@@ -311,6 +323,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
       </div>
+
+      {/* Monthly Category Budgets & Spending Limits Progress */}
+      <CategoryBudgetProgressCard
+        onOpenBudgetModal={onOpenBudgetModal}
+        transactions={relevantTransactions}
+      />
 
       {/* Visual Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -453,6 +471,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {recentTransactions.length === 0 ? (
           <div className="py-12 text-center text-slate-500 text-xs flex flex-col items-center justify-center">
+            <div className="w-10 h-10 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mb-2">
+              <IndianRupee className="w-5 h-5 stroke-[2]" />
+            </div>
             <p className="font-bold text-slate-800 text-sm">No transactions yet</p>
             <p className="text-slate-400 mt-1">Ready for your real data. Tap "Add Income" or "Add Expense" above to get started.</p>
           </div>
@@ -481,13 +502,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       }`}
                     >
                       {isIncome ? (
-                        <span className="font-black text-xs">₹</span>
+                        <IndianRupee className="w-4 h-4 stroke-[2.5]" />
                       ) : isTransfer ? (
                         <Building2 className="w-4 h-4" />
                       ) : isEmi ? (
                         <Landmark className="w-4 h-4" />
                       ) : (
-                        <Receipt className="w-4 h-4" />
+                        <IndianRupee className="w-4 h-4 stroke-[2.5]" />
                       )}
                     </div>
 

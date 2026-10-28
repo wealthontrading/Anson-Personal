@@ -145,3 +145,12 @@ export interface CustomCategory {
   createdAt: string;
 }
 
+export interface CategoryBudget {
+  id: string;
+  category: string;
+  monthlyLimit: number;
+  scope?: 'Family' | 'Anson' | 'Dona';
+  createdAt?: string;
+  updatedAt?: string;
+}
+

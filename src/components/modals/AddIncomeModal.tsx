@@ -2,24 +2,23 @@ import React, { useState } from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { IncomeSource, Person } from '../../types/finance';
 import { getTodayISO, INCOME_SOURCE_DETAILS } from '../../utils/formatters';
-import { X, Coins, Check, Plus, Tag } from 'lucide-react';
+import { X, Check, IndianRupee, Plus, Tag, Lock } from 'lucide-react';
 
 interface AddIncomeModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (saved?: boolean) => void;
 }
 
 export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose }) => {
   const { currentUser, bankAccounts, customCategories, addCustomCategory, addTransaction } = useFinance();
 
   const [amount, setAmount] = useState<string>('');
-  const [person, setPerson] = useState<Person>(currentUser);
   const [source, setSource] = useState<string>('salary');
   const [destinationType, setDestinationType] = useState<'bank' | 'cash'>(() => {
     return bankAccounts.length > 0 ? 'bank' : 'cash';
   });
   const [selectedAccountId, setSelectedAccountId] = useState<string>(() => {
-    const defaultAcc = bankAccounts.find((a) => a.owner === currentUser) || bankAccounts[0];
+    const defaultAcc = bankAccounts.find((a) => a.owner === currentUser) || bankAccounts.find((a) => a.owner === 'Joint') || bankAccounts[0];
     return defaultAcc?.id || '';
   });
   const [date, setDate] = useState<string>(getTodayISO());
@@ -32,8 +31,9 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
 
   if (!isOpen) return null;
 
+  // Filter accounts strictly to logged-in user and Joint accounts
   const availableAccounts = bankAccounts.filter(
-    (acc) => acc.owner === person || acc.owner === 'Joint'
+    (acc) => acc.owner === currentUser || acc.owner === 'Joint'
   );
 
   const handleCreateSource = (e: React.FormEvent) => {
@@ -55,7 +55,7 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
 
     if (destinationType === 'bank' && !selectedAccountId) {
       if (availableAccounts.length === 0) {
-        setError('No bank accounts found. Please select Cash in Hand or add a bank account first.');
+        setError('No bank accounts found for your profile. Please select Cash in Hand or add a bank account first.');
       } else {
         setError('Please select a destination bank account');
       }
@@ -63,25 +63,26 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
     }
 
     const sourceLabel = INCOME_SOURCE_DETAILS[source as IncomeSource]?.label || source;
-    const title = notes.trim() ? notes.trim() : `${sourceLabel} - ${person}`;
+    const title = notes.trim() ? notes.trim() : `${sourceLabel} - ${currentUser}`;
 
     addTransaction({
       type: 'income',
       title,
       amount: numAmount,
       date,
-      person,
+      person: currentUser,
       category: source,
       paymentMethod: destinationType === 'cash' ? 'cash' : 'bank',
       toAccountId: destinationType === 'bank' ? selectedAccountId : undefined,
-      toCashPerson: destinationType === 'cash' ? person : undefined,
+      toCashPerson: destinationType === 'cash' ? currentUser : undefined,
       notes: notes.trim(),
     });
 
-    onClose();
     setAmount('');
     setNotes('');
     setError('');
+    // Save entry and signal parent to close modal and switch to transactions tab
+    onClose(true);
   };
 
   const incomeCustomCats = customCategories.filter((c) => c.type === 'income');
@@ -97,14 +98,14 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onClose()}
               className="p-1.5 -ml-1.5 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
               title="Close window"
             >
               <X className="w-5 h-5" />
             </button>
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-xl">
-              ₹
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+              <IndianRupee className="w-5 h-5 stroke-[2.5]" />
             </div>
             <div>
               <h3 className="text-lg font-bold text-slate-900">Record New Income</h3>
@@ -113,7 +114,7 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => onClose()}
             className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 transition"
           >
             Close
@@ -133,8 +134,8 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
               Income Amount (₹) *
             </label>
             <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-slate-400">
-                ₹
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                <IndianRupee className="w-4 h-4 stroke-[2.5]" />
               </span>
               <input
                 type="number"
@@ -152,40 +153,29 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
             </div>
           </div>
 
-          {/* Received By: Anson or Dona */}
+          {/* Received By: Locked to Logged-in Account */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-              Received By *
+              Received By (Logged-in Account)
             </label>
-            <div className="grid grid-cols-2 gap-3">
-              {(['Anson', 'Dona'] as Person[]).map((p) => {
-                const isSelected = person === p;
-                return (
-                  <button
-                    type="button"
-                    key={p}
-                    onClick={() => {
-                      setPerson(p);
-                      const acc = bankAccounts.find((a) => a.owner === p);
-                      if (acc) setSelectedAccountId(acc.id);
-                    }}
-                    className={`py-3 px-4 rounded-2xl border text-sm font-bold flex items-center justify-center gap-2 transition ${
-                      isSelected
-                        ? p === 'Anson'
-                          ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-xs'
-                          : 'bg-emerald-50 border-emerald-600 text-emerald-700 shadow-xs'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span
-                      className={`w-2.5 h-2.5 rounded-full ${
-                        p === 'Anson' ? 'bg-blue-600' : 'bg-emerald-600'
-                      }`}
-                    />
-                    {p}
-                  </button>
-                );
-              })}
+            <div className="p-3 bg-slate-50 border border-slate-200/90 rounded-2xl flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-8 h-8 rounded-xl text-white font-black text-sm flex items-center justify-center shadow-xs ${
+                    currentUser === 'Anson' ? 'bg-blue-600' : 'bg-emerald-600'
+                  }`}
+                >
+                  {currentUser[0]}
+                </div>
+                <div>
+                  <span className="text-sm font-extrabold text-slate-900 block leading-tight">{currentUser}</span>
+                  <span className="text-[11px] text-slate-500 font-medium">Auto-credited to your account</span>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-xl flex items-center gap-1.5 shadow-2xs">
+                <Lock className="w-3 h-3 text-slate-400" />
+                <span>Account Locked</span>
+              </span>
             </div>
           </div>
 
@@ -309,7 +299,7 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
                     : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                 }`}
               >
-                Cash in Hand ({person})
+                Cash in Hand ({currentUser})
               </button>
             </div>
 
@@ -317,7 +307,7 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
               <div className="mt-2">
                 {availableAccounts.length === 0 ? (
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-                    No bank accounts added for <strong>{person}</strong> yet. Please switch to <strong>Cash in Hand</strong> above or add a bank account in the Accounts section.
+                    No bank accounts added for <strong>{currentUser}</strong> yet. Please switch to <strong>Cash in Hand</strong> above or add a bank account in the Accounts section.
                   </div>
                 ) : (
                   <select
@@ -368,7 +358,7 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
           <div className="pt-3 flex items-center gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onClose()}
               className="w-1/3 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-2xl transition"
             >
               Cancel

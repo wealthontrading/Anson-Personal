@@ -16,6 +16,7 @@ import { EmisView } from './components/views/EmisView';
 import { ReportsView } from './components/views/ReportsView';
 import { SettingsView } from './components/views/SettingsView';
 import { PinLockModal } from './components/common/PinLockModal';
+import { LoginModal } from './components/common/LoginModal';
 import { QuickActionModal } from './components/common/QuickActionModal';
 import { AddIncomeModal } from './components/modals/AddIncomeModal';
 import { AddExpenseModal } from './components/modals/AddExpenseModal';
@@ -23,6 +24,7 @@ import { TransferMoneyModal } from './components/modals/TransferMoneyModal';
 import { PayEmiModal } from './components/modals/PayEmiModal';
 import { AddEditAccountModal } from './components/modals/AddEditAccountModal';
 import { AddEditLoanModal } from './components/modals/AddEditLoanModal';
+import { BudgetManagementModal } from './components/modals/BudgetManagementModal';
 import { ReceiptViewerModal } from './components/common/ReceiptViewerModal';
 import { SimpleMobileView } from './components/views/SimpleMobileView';
 import { OfflineIndicator } from './components/common/OfflineIndicator';
@@ -35,6 +37,7 @@ export type ModalType =
   | 'expense'
   | 'transfer'
   | 'emi'
+  | 'budget'
   | 'add_account'
   | 'edit_account'
   | 'add_loan'
@@ -87,13 +90,23 @@ function MainApp() {
     }
   };
 
-  // Close modal safely
-  const closeModal = () => {
+  // Close modal safely and navigate to transactions view if an entry was saved
+  const closeModal = (saved?: boolean) => {
     setActiveModal(null);
     setEditingAccount(null);
     setEditingLoan(null);
     setEditingTransaction(null);
     setPresetLoanId(undefined);
+
+    if (saved) {
+      setCurrentTab('transactions');
+      setIsSimpleMode(false);
+      modalHistoryPushedRef.current = false;
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({ tab: 'transactions', isSimple: false, isModal: false }, '', '#transactions');
+      }
+      return;
+    }
 
     if (modalHistoryPushedRef.current) {
       modalHistoryPushedRef.current = false;
@@ -283,6 +296,7 @@ function MainApp() {
                 <DashboardView
                   onOpenQuickAction={() => openModal('quick')}
                   onOpenActionType={handleSelectQuickAction}
+                  onOpenBudgetModal={() => openModal('budget')}
                   onSelectTab={handleSelectTab}
                   onViewReceipt={handleViewReceipt}
                 />
@@ -333,6 +347,9 @@ function MainApp() {
       {/* Offline Alert */}
       <OfflineIndicator />
 
+      {/* One-Time Device Login Overlay */}
+      <LoginModal />
+
       {/* PIN Security Overlay */}
       <PinLockModal />
 
@@ -375,6 +392,11 @@ function MainApp() {
         isOpen={activeModal === 'add_loan' || activeModal === 'edit_loan'}
         onClose={closeModal}
         editLoanData={editingLoan}
+      />
+
+      <BudgetManagementModal
+        isOpen={activeModal === 'budget'}
+        onClose={closeModal}
       />
 
       <ReceiptViewerModal

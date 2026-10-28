@@ -101,6 +101,26 @@
         "pin": { "type": "string" }
       },
       "required": ["id", "name"]
+    },
+    "category_budgets": {
+      "title": "Category Budget",
+      "description": "Monthly spending limits per category for family, Anson, or Dona",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "category": { "type": "string" },
+        "monthlyLimit": { "type": "number" },
+        "scope": { "type": "string", "enum": ["Family", "Anson", "Dona"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "category", "monthlyLimit"]
+    }
+  },
+  "firestore": {
+    "/category_budgets/{budgetId}": {
+      "schema": { "$ref": "#/entities/category_budgets" },
+      "description": "Monthly spending limits for expense categories"
     }
   }
 }

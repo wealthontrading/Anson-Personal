@@ -13,6 +13,7 @@ import {
   Trash2,
   ArrowDownLeft,
   ArrowUpRight,
+  IndianRupee,
   ShieldCheck,
   ChevronRight,
 } from 'lucide-react';
@@ -296,15 +297,24 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
               {accountTransactions.map((tx) => {
                 const isIncoming = tx.toAccountId === selectedAccount.id;
                 return (
-                  <div key={tx.id} className="py-2.5 flex items-center justify-between">
-                    <div>
-                      <p className="font-bold text-slate-800">{tx.title}</p>
-                      <p className="text-[11px] text-slate-400">
-                        {formatDateDDMMYYYY(tx.date)} • By {tx.person}
-                      </p>
+                  <div key={tx.id} className="py-2.5 flex items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                          isIncoming ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+                        }`}
+                      >
+                        <IndianRupee className="w-3.5 h-3.5 stroke-[2.5]" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-800 truncate">{tx.title}</p>
+                        <p className="text-[11px] text-slate-400">
+                          {formatDateDDMMYYYY(tx.date)} • By {tx.person}
+                        </p>
+                      </div>
                     </div>
                     <span
-                      className={`font-black ${
+                      className={`font-black shrink-0 ${
                         isIncoming ? 'text-emerald-600' : 'text-rose-600'
                       }`}
                     >

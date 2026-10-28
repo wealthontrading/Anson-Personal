@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   LayoutDashboard,
-  Receipt,
+  IndianRupee,
   Plus,
   Landmark,
   BarChart3,
@@ -43,7 +43,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             currentTab === 'transactions' ? 'text-slate-900 font-extrabold' : 'text-slate-400 font-medium'
           }`}
         >
-          <Receipt className={`w-5 h-5 ${currentTab === 'transactions' ? 'text-slate-900 stroke-[2.5]' : ''}`} />
+          <IndianRupee className={`w-5 h-5 ${currentTab === 'transactions' ? 'text-slate-900 stroke-[2.5]' : ''}`} />
           <span className="text-[10px] mt-0.5">Transactions</span>
         </button>
 

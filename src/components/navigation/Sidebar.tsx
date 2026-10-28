@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   LayoutDashboard,
-  Receipt,
+  IndianRupee,
   Landmark,
   BarChart3,
   Settings,
@@ -34,7 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const navItems = [
     { id: 'dashboard' as NavTab, label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'transactions' as NavTab, label: 'Transactions', icon: Receipt },
+    { id: 'transactions' as NavTab, label: 'Transactions', icon: IndianRupee },
     { id: 'accounts' as NavTab, label: 'Bank & Cash', icon: Wallet },
     { id: 'emis' as NavTab, label: 'Loans & EMIs', icon: Landmark },
     { id: 'reports' as NavTab, label: 'Analytics & Reports', icon: BarChart3 },

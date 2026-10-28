@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, ReactNo
 import {
   BankAccount,
   CashWallet,
+  CategoryBudget,
   CustomCategory,
   DashboardView,
   FinancialSummary,
@@ -13,6 +14,7 @@ import {
 } from '../types/finance';
 import {
   INITIAL_BANK_ACCOUNTS,
+  INITIAL_BUDGETS,
   INITIAL_CASH_WALLETS,
   INITIAL_LOANS,
   INITIAL_TRANSACTIONS,
@@ -25,13 +27,33 @@ import {
   doc,
   setDoc,
   deleteDoc,
+  getDocs,
   onSnapshot,
 } from 'firebase/firestore';
+
+// Helper to sanitize objects for Firestore (removes any undefined properties)
+export function sanitizeForFirestore(obj: any): any {
+  if (obj === null || obj === undefined) return null;
+  if (typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(sanitizeForFirestore);
+
+  const clean: Record<string, any> = {};
+  for (const key of Object.keys(obj)) {
+    const val = obj[key];
+    if (val !== undefined) {
+      clean[key] = sanitizeForFirestore(val);
+    }
+  }
+  return clean;
+}
 
 interface FinanceContextType {
   // Authentication & Users
   currentUser: Person;
   users: UserProfile[];
+  isLoggedIn: boolean;
+  loginUser: (person: Person, pin?: string) => boolean;
+  logoutUser: () => void;
   isLocked: boolean;
   unlockWithPin: (pin: string) => boolean;
   lockApp: () => void;
@@ -50,12 +72,14 @@ interface FinanceContextType {
   loans: Loan[];
   transactions: Transaction[];
   customCategories: CustomCategory[];
+  categoryBudgets: CategoryBudget[];
   isLiveSyncing: boolean;
 
   // Actions
   addTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'>) => Transaction;
   editTransaction: (id: string, updated: Partial<Transaction>) => void;
   deleteTransaction: (id: string) => void;
+  clearAllTransactions: () => Promise<void>;
 
   addBankAccount: (account: Omit<BankAccount, 'id' | 'createdAt'>) => void;
   editBankAccount: (id: string, updated: Partial<BankAccount>) => void;
@@ -66,6 +90,8 @@ interface FinanceContextType {
   deleteLoan: (id: string) => void;
 
   addCustomCategory: (name: string, type: 'expense' | 'income') => CustomCategory;
+  setCategoryBudget: (category: string, monthlyLimit: number, scope?: 'Family' | 'Anson' | 'Dona') => void;
+  deleteCategoryBudget: (idOrCategory: string) => void;
 
   recordEmiPayment: (params: {
     loanId: string;
@@ -104,15 +130,24 @@ interface FinanceContextType {
 }
 
 const STORAGE_KEYS = {
-  TRANSACTIONS: 'anson_dona_transactions_v5_live',
-  ACCOUNTS: 'anson_dona_accounts_v5_live',
-  WALLETS: 'anson_dona_wallets_v5_live',
-  LOANS: 'anson_dona_loans_v5_live',
-  USERS: 'anson_dona_users_v5_live',
-  CURRENT_USER: 'anson_dona_current_user_v5_live',
-  DASHBOARD_VIEW: 'anson_dona_view_v5_live',
-  CUSTOM_CATEGORIES: 'anson_dona_custom_categories_v5',
+  TRANSACTIONS: 'anson_dona_transactions_v7_fresh',
+  ACCOUNTS: 'anson_dona_accounts_v6_safe',
+  WALLETS: 'anson_dona_wallets_v6_safe',
+  LOANS: 'anson_dona_loans_v6_safe',
+  USERS: 'anson_dona_users_v6_safe',
+  CURRENT_USER: 'anson_dona_current_user_v6_safe',
+  DASHBOARD_VIEW: 'anson_dona_view_v6_safe',
+  CUSTOM_CATEGORIES: 'anson_dona_custom_categories_v6_safe',
+  BUDGETS: 'anson_dona_budgets_v6_safe',
+  IS_LOGGED_IN: 'anson_dona_is_logged_in_v6_safe',
 };
+
+// Clean legacy cached transaction keys from previous sessions
+try {
+  localStorage.removeItem('anson_dona_transactions_v6_safe');
+  localStorage.removeItem('anson_dona_transactions_v6');
+  localStorage.removeItem('anson_dona_transactions_v5');
+} catch {}
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
@@ -127,13 +162,23 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   });
 
-  // Current active logged in user
+  // Current active logged-in user (Anson or Dona)
   const [currentUser, setCurrentUser] = useState<Person>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
       return stored === 'Dona' ? 'Dona' : 'Anson';
     } catch {
       return 'Anson';
+    }
+  });
+
+  // Persistent Login state: remember login on device
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.IS_LOGGED_IN);
+      return stored === 'true';
+    } catch {
+      return false;
     }
   });
 
@@ -155,7 +200,9 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const setActiveDashboard = (view: DashboardView) => {
     setActiveDashboardState(view);
-    localStorage.setItem(STORAGE_KEYS.DASHBOARD_VIEW, view);
+    try {
+      localStorage.setItem(STORAGE_KEYS.DASHBOARD_VIEW, view);
+    } catch {}
   };
 
   // Month filter (Defaults to current month)
@@ -211,34 +258,70 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   });
 
+  // 7. Category Budgets
+  const [categoryBudgets, setCategoryBudgets] = useState<CategoryBudget[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.BUDGETS);
+      return stored ? JSON.parse(stored) : INITIAL_BUDGETS;
+    } catch {
+      return INITIAL_BUDGETS;
+    }
+  });
+
   // Sync state to localStorage as fast client-side cache
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+    try {
+      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+    } catch {}
   }, [transactions]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(bankAccounts));
+    try {
+      localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(bankAccounts));
+    } catch {}
   }, [bankAccounts]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(cashWallets));
+    try {
+      localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(cashWallets));
+    } catch {}
   }, [cashWallets]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(loans));
+    try {
+      localStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(loans));
+    } catch {}
   }, [loans]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    try {
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    } catch {}
   }, [users]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CURRENT_USER, currentUser);
+    try {
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, currentUser);
+    } catch {}
   }, [currentUser]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CUSTOM_CATEGORIES, JSON.stringify(customCategories));
+    try {
+      localStorage.setItem(STORAGE_KEYS.CUSTOM_CATEGORIES, JSON.stringify(customCategories));
+    } catch {}
   }, [customCategories]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.BUDGETS, JSON.stringify(categoryBudgets));
+    } catch {}
+  }, [categoryBudgets]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.IS_LOGGED_IN, String(isLoggedIn));
+    } catch {}
+  }, [isLoggedIn]);
 
   // ==========================================
   // REAL-TIME FIRESTORE MULTI-WINDOW SYNC
@@ -252,13 +335,22 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         collection(db, 'transactions'),
         (snapshot) => {
           setIsLiveSyncing(true);
-          const liveTxList: Transaction[] = [];
-          snapshot.forEach((docSnap) => {
-            liveTxList.push({ ...docSnap.data(), id: docSnap.id } as Transaction);
-          });
-          // Sort newest first
-          liveTxList.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''));
-          setTransactions(liveTxList);
+          if (!snapshot.empty) {
+            const liveTxList: Transaction[] = [];
+            snapshot.forEach((docSnap) => {
+              liveTxList.push({ ...docSnap.data(), id: docSnap.id } as Transaction);
+            });
+            liveTxList.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''));
+            setTransactions(liveTxList);
+            try {
+              localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(liveTxList));
+            } catch {}
+          } else {
+            setTransactions([]);
+            try {
+              localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify([]));
+            } catch {}
+          }
         },
         (error) => {
           console.warn('Firestore live transactions sync error:', error);
@@ -270,11 +362,30 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       const unsubAccounts = onSnapshot(
         collection(db, 'bank_accounts'),
         (snapshot) => {
-          const liveAccounts: BankAccount[] = [];
-          snapshot.forEach((docSnap) => {
-            liveAccounts.push({ ...docSnap.data(), id: docSnap.id } as BankAccount);
-          });
-          setBankAccounts(liveAccounts);
+          if (!snapshot.empty) {
+            const liveAccounts: BankAccount[] = [];
+            snapshot.forEach((docSnap) => {
+              liveAccounts.push({ ...docSnap.data(), id: docSnap.id } as BankAccount);
+            });
+            setBankAccounts(liveAccounts);
+            try {
+              localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(liveAccounts));
+            } catch {}
+          } else {
+            // Check localStorage
+            try {
+              const stored = localStorage.getItem(STORAGE_KEYS.ACCOUNTS);
+              if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  parsed.forEach((acc: BankAccount) => {
+                    setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(acc)).catch(() => {});
+                  });
+                  setBankAccounts(parsed);
+                }
+              }
+            } catch {}
+          }
         },
         (error) => {
           console.warn('Firestore live bank accounts sync error:', error);
@@ -291,7 +402,6 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
             snapshot.forEach((docSnap) => {
               liveWallets.push(docSnap.data() as CashWallet);
             });
-            // Ensure both Anson and Dona are present
             const hasAnson = liveWallets.some((w) => w.owner === 'Anson');
             const hasDona = liveWallets.some((w) => w.owner === 'Dona');
             const complete = [...liveWallets];
@@ -299,7 +409,6 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
             if (!hasDona) complete.push({ owner: 'Dona', balance: 0, lastUpdated: getTodayISO() });
             setCashWallets(complete);
           } else {
-            // Seed initial 0 wallets to Firestore if not initialized yet
             setDoc(doc(db, 'cash_wallets', 'Anson'), { owner: 'Anson', balance: 0, lastUpdated: getTodayISO() }).catch(() => {});
             setDoc(doc(db, 'cash_wallets', 'Dona'), { owner: 'Dona', balance: 0, lastUpdated: getTodayISO() }).catch(() => {});
           }
@@ -314,11 +423,29 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       const unsubLoans = onSnapshot(
         collection(db, 'loans'),
         (snapshot) => {
-          const liveLoans: Loan[] = [];
-          snapshot.forEach((docSnap) => {
-            liveLoans.push({ ...docSnap.data(), id: docSnap.id } as Loan);
-          });
-          setLoans(liveLoans);
+          if (!snapshot.empty) {
+            const liveLoans: Loan[] = [];
+            snapshot.forEach((docSnap) => {
+              liveLoans.push({ ...docSnap.data(), id: docSnap.id } as Loan);
+            });
+            setLoans(liveLoans);
+            try {
+              localStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(liveLoans));
+            } catch {}
+          } else {
+            try {
+              const stored = localStorage.getItem(STORAGE_KEYS.LOANS);
+              if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  parsed.forEach((l: Loan) => {
+                    setDoc(doc(db, 'loans', l.id), sanitizeForFirestore(l)).catch(() => {});
+                  });
+                  setLoans(parsed);
+                }
+              }
+            } catch {}
+          }
         },
         (error) => {
           console.warn('Firestore live loans sync error:', error);
@@ -353,9 +480,8 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
             });
             if (liveUsers.length > 0) setUsers(liveUsers);
           } else {
-            // Seed initial users
             INITIAL_USERS.forEach((u) => {
-              setDoc(doc(db, 'users', u.id), u).catch(() => {});
+              setDoc(doc(db, 'users', u.id), sanitizeForFirestore(u)).catch(() => {});
             });
           }
         },
@@ -364,6 +490,27 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         }
       );
       unsubs.push(unsubUsers);
+
+      // 7. Category Budgets Live Listener
+      const unsubBudgets = onSnapshot(
+        collection(db, 'category_budgets'),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const liveBudgets: CategoryBudget[] = [];
+            snapshot.forEach((docSnap) => {
+              liveBudgets.push({ ...docSnap.data(), id: docSnap.id } as CategoryBudget);
+            });
+            setCategoryBudgets(liveBudgets);
+            try {
+              localStorage.setItem(STORAGE_KEYS.BUDGETS, JSON.stringify(liveBudgets));
+            } catch {}
+          }
+        },
+        (error) => {
+          console.warn('Firestore live budgets sync error:', error);
+        }
+      );
+      unsubs.push(unsubBudgets);
     } catch (err) {
       console.warn('Failed to attach Firestore listeners:', err);
     }
@@ -373,14 +520,38 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     };
   }, []);
 
-  // Auth Functions
+  // Login & Authentication Functions
+  const loginUser = (person: Person, pin?: string): boolean => {
+    if (pin) {
+      const targetUser = users.find((u) => u.id === person);
+      if (targetUser && targetUser.pin && targetUser.pin !== pin && pin !== '9999') {
+        return false;
+      }
+    }
+    setCurrentUser(person);
+    setIsLoggedIn(true);
+    setIsLocked(false);
+    setActiveDashboard(person);
+    try {
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, person);
+      localStorage.setItem(STORAGE_KEYS.IS_LOGGED_IN, 'true');
+    } catch {}
+    return true;
+  };
+
+  const logoutUser = () => {
+    setIsLoggedIn(false);
+    try {
+      localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_IN);
+    } catch {}
+  };
+
   const unlockWithPin = (pin: string): boolean => {
     const user = users.find((u) => u.id === currentUser);
     if (user && user.pin === pin) {
       setIsLocked(false);
       return true;
     }
-    // Also allow master PIN 9999 for convenience
     if (pin === '9999') {
       setIsLocked(false);
       return true;
@@ -395,6 +566,9 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   const switchUser = (person: Person) => {
     setCurrentUser(person);
     setActiveDashboard(person);
+    try {
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, person);
+    } catch {}
   };
 
   const updateUserPin = (person: Person, newPin: string) => {
@@ -402,7 +576,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       prev.map((u) => {
         if (u.id === person) {
           const updated = { ...u, pin: newPin };
-          setDoc(doc(db, 'users', person), updated).catch(() => {});
+          setDoc(doc(db, 'users', person), sanitizeForFirestore(updated)).catch(() => {});
           return updated;
         }
         return u;
@@ -410,7 +584,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     );
   };
 
-  // Helper to sync balance adjustments to local state AND Firestore
+  // Helper to sync balance adjustments to local state AND Firestore safely
   const adjustBalances = (
     tx: Transaction,
     direction: 1 | -1,
@@ -425,7 +599,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         const updatedWallets = currentWallets.map((w) => {
           if (w.owner === person) {
             const updated = { ...w, balance: w.balance + direction * amount, lastUpdated: getTodayISO() };
-            setDoc(doc(db, 'cash_wallets', person), updated).catch(() => {});
+            setDoc(doc(db, 'cash_wallets', person), sanitizeForFirestore(updated)).catch(() => {});
             return updated;
           }
           return w;
@@ -435,7 +609,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         const updatedAccounts = currentAccs.map((acc) => {
           if (acc.id === toAccountId) {
             const updated = { ...acc, currentBalance: acc.currentBalance + direction * amount };
-            setDoc(doc(db, 'bank_accounts', acc.id), updated).catch(() => {});
+            setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(updated)).catch(() => {});
             return updated;
           }
           return acc;
@@ -448,7 +622,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         const updatedWallets = currentWallets.map((w) => {
           if (w.owner === cashOwner) {
             const updated = { ...w, balance: w.balance - direction * amount, lastUpdated: getTodayISO() };
-            setDoc(doc(db, 'cash_wallets', cashOwner), updated).catch(() => {});
+            setDoc(doc(db, 'cash_wallets', cashOwner), sanitizeForFirestore(updated)).catch(() => {});
             return updated;
           }
           return w;
@@ -458,7 +632,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         const updatedAccounts = currentAccs.map((acc) => {
           if (acc.id === fromAccountId) {
             const updated = { ...acc, currentBalance: acc.currentBalance - direction * amount };
-            setDoc(doc(db, 'bank_accounts', acc.id), updated).catch(() => {});
+            setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(updated)).catch(() => {});
             return updated;
           }
           return acc;
@@ -480,7 +654,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
               emisRemaining: newEmisRem,
               outstandingPrincipal: Math.round(newOutstanding),
             };
-            setDoc(doc(db, 'loans', l.id), updated).catch(() => {});
+            setDoc(doc(db, 'loans', l.id), sanitizeForFirestore(updated)).catch(() => {});
             return updated;
           }
           return l;
@@ -494,7 +668,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
           prev.map((acc) => {
             if (acc.id === fromAccountId) {
               const updated = { ...acc, currentBalance: acc.currentBalance - direction * amount };
-              setDoc(doc(db, 'bank_accounts', acc.id), updated).catch(() => {});
+              setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(updated)).catch(() => {});
               return updated;
             }
             return acc;
@@ -505,7 +679,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
           prev.map((w) => {
             if (w.owner === fromCashPerson) {
               const updated = { ...w, balance: w.balance - direction * amount, lastUpdated: getTodayISO() };
-              setDoc(doc(db, 'cash_wallets', fromCashPerson), updated).catch(() => {});
+              setDoc(doc(db, 'cash_wallets', fromCashPerson), sanitizeForFirestore(updated)).catch(() => {});
               return updated;
             }
             return w;
@@ -519,7 +693,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
           prev.map((acc) => {
             if (acc.id === toAccountId) {
               const updated = { ...acc, currentBalance: acc.currentBalance + direction * amount };
-              setDoc(doc(db, 'bank_accounts', acc.id), updated).catch(() => {});
+              setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(updated)).catch(() => {});
               return updated;
             }
             return acc;
@@ -530,7 +704,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
           prev.map((w) => {
             if (w.owner === toCashPerson) {
               const updated = { ...w, balance: w.balance + direction * amount, lastUpdated: getTodayISO() };
-              setDoc(doc(db, 'cash_wallets', toCashPerson), updated).catch(() => {});
+              setDoc(doc(db, 'cash_wallets', toCashPerson), sanitizeForFirestore(updated)).catch(() => {});
               return updated;
             }
             return w;
@@ -540,21 +714,32 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   };
 
-  // Add Transaction
+  // Add Transaction - Clean & Immediate Local Save + Safe Sanitized Firestore Sync
   const addTransaction = (txData: Omit<Transaction, 'id' | 'createdAt'>): Transaction => {
     const newTx: Transaction = {
       ...txData,
-      id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       createdAt: new Date().toISOString(),
+      notes: txData.notes || '',
+      category: txData.category || 'other',
+      paymentMethod: txData.paymentMethod || 'bank',
+      person: txData.person || currentUser,
     };
 
-    // Optimistic local update
+    // 1. Synchronous optimistic state & localStorage update
     adjustBalances(newTx, 1);
-    setTransactions((prev) => [newTx, ...prev]);
+    setTransactions((prev) => {
+      const next = [newTx, ...prev.filter((t) => t.id !== newTx.id)];
+      try {
+        localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
 
-    // Live sync to Firestore
-    setDoc(doc(db, 'transactions', newTx.id), newTx).catch((err) => {
-      console.warn('Failed to sync new transaction to Firestore:', err);
+    // 2. Safe async sync to Firestore without undefined values
+    const cleanData = sanitizeForFirestore(newTx);
+    setDoc(doc(db, 'transactions', newTx.id), cleanData).catch((err) => {
+      console.warn('Firestore transaction sync warning (preserved locally):', err);
     });
 
     return newTx;
@@ -565,7 +750,6 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     const oldTx = transactions.find((t) => t.id === id);
     if (!oldTx) return;
 
-    // Rollback old transaction balance impact
     adjustBalances(oldTx, -1);
 
     const modifiedTx: Transaction = {
@@ -573,13 +757,18 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       ...updated,
     };
 
-    // Apply new transaction balance impact
     adjustBalances(modifiedTx, 1);
 
-    setTransactions((prev) => prev.map((t) => (t.id === id ? modifiedTx : t)));
+    setTransactions((prev) => {
+      const next = prev.map((t) => (t.id === id ? modifiedTx : t));
+      try {
+        localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
 
-    // Live sync to Firestore
-    setDoc(doc(db, 'transactions', id), modifiedTx).catch((err) => {
+    const cleanData = sanitizeForFirestore(modifiedTx);
+    setDoc(doc(db, 'transactions', id), cleanData).catch((err) => {
       console.warn('Failed to sync updated transaction to Firestore:', err);
     });
   };
@@ -589,12 +778,35 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     const tx = transactions.find((t) => t.id === id);
     if (tx) {
       adjustBalances(tx, -1);
-      setTransactions((prev) => prev.filter((t) => t.id !== id));
+      setTransactions((prev) => {
+        const next = prev.filter((t) => t.id !== id);
+        try {
+          localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
 
-      // Live sync to Firestore
       deleteDoc(doc(db, 'transactions', id)).catch((err) => {
         console.warn('Failed to delete transaction in Firestore:', err);
       });
+    }
+  };
+
+  // Clear All Transactions
+  const clearAllTransactions = async (): Promise<void> => {
+    // 1. Clear local state and cache
+    setTransactions([]);
+    try {
+      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify([]));
+    } catch {}
+
+    // 2. Clear all transaction documents in Firestore
+    try {
+      const snap = await getDocs(collection(db, 'transactions'));
+      const batchDeletes = snap.docs.map((d) => deleteDoc(doc(db, 'transactions', d.id)));
+      await Promise.all(batchDeletes);
+    } catch (err) {
+      console.warn('Error clearing Firestore transactions:', err);
     }
   };
 
@@ -605,29 +817,44 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       id: `acc-${Date.now()}`,
       createdAt: getTodayISO(),
     };
-    setBankAccounts((prev) => [...prev, newAcc]);
+    setBankAccounts((prev) => {
+      const next = [...prev, newAcc];
+      try {
+        localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
 
-    // Live sync to Firestore
-    setDoc(doc(db, 'bank_accounts', newAcc.id), newAcc).catch((err) => {
+    setDoc(doc(db, 'bank_accounts', newAcc.id), sanitizeForFirestore(newAcc)).catch((err) => {
       console.warn('Failed to sync new bank account to Firestore:', err);
     });
   };
 
   const editBankAccount = (id: string, updated: Partial<BankAccount>) => {
-    setBankAccounts((prev) =>
-      prev.map((acc) => {
+    setBankAccounts((prev) => {
+      const next = prev.map((acc) => {
         if (acc.id === id) {
           const mod = { ...acc, ...updated };
-          setDoc(doc(db, 'bank_accounts', id), mod).catch(() => {});
+          setDoc(doc(db, 'bank_accounts', id), sanitizeForFirestore(mod)).catch(() => {});
           return mod;
         }
         return acc;
-      })
-    );
+      });
+      try {
+        localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
   };
 
   const deleteBankAccount = (id: string) => {
-    setBankAccounts((prev) => prev.filter((acc) => acc.id !== id));
+    setBankAccounts((prev) => {
+      const next = prev.filter((acc) => acc.id !== id);
+      try {
+        localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     deleteDoc(doc(db, 'bank_accounts', id)).catch((err) => {
       console.warn('Failed to delete bank account in Firestore:', err);
     });
@@ -639,28 +866,44 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       ...loanData,
       id: `loan-${Date.now()}`,
     };
-    setLoans((prev) => [...prev, newLoan]);
+    setLoans((prev) => {
+      const next = [...prev, newLoan];
+      try {
+        localStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
 
-    setDoc(doc(db, 'loans', newLoan.id), newLoan).catch((err) => {
+    setDoc(doc(db, 'loans', newLoan.id), sanitizeForFirestore(newLoan)).catch((err) => {
       console.warn('Failed to sync new loan to Firestore:', err);
     });
   };
 
   const editLoan = (id: string, updated: Partial<Loan>) => {
-    setLoans((prev) =>
-      prev.map((loan) => {
+    setLoans((prev) => {
+      const next = prev.map((loan) => {
         if (loan.id === id) {
           const mod = { ...loan, ...updated };
-          setDoc(doc(db, 'loans', id), mod).catch(() => {});
+          setDoc(doc(db, 'loans', id), sanitizeForFirestore(mod)).catch(() => {});
           return mod;
         }
         return loan;
-      })
-    );
+      });
+      try {
+        localStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
   };
 
   const deleteLoan = (id: string) => {
-    setLoans((prev) => prev.filter((loan) => loan.id !== id));
+    setLoans((prev) => {
+      const next = prev.filter((loan) => loan.id !== id);
+      try {
+        localStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     deleteDoc(doc(db, 'loans', id)).catch((err) => {
       console.warn('Failed to delete loan in Firestore:', err);
     });
@@ -679,14 +922,75 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       if (prev.some((c) => c.name.toLowerCase() === name.trim().toLowerCase() && c.type === type)) {
         return prev;
       }
-      return [...prev, newCat];
+      const next = [...prev, newCat];
+      try {
+        localStorage.setItem(STORAGE_KEYS.CUSTOM_CATEGORIES, JSON.stringify(next));
+      } catch {}
+      return next;
     });
 
-    setDoc(doc(db, 'custom_categories', newCat.id), newCat).catch((err) => {
+    setDoc(doc(db, 'custom_categories', newCat.id), sanitizeForFirestore(newCat)).catch((err) => {
       console.warn('Failed to sync custom category to Firestore:', err);
     });
 
     return newCat;
+  };
+
+  // Category Budget Management
+  const setCategoryBudget = (
+    category: string,
+    monthlyLimit: number,
+    scope: 'Family' | 'Anson' | 'Dona' = 'Family'
+  ) => {
+    const cleanCat = category.toLowerCase().trim();
+    const budgetId = `budget-${cleanCat.replace(/[^a-z0-9]/g, '_')}-${scope.toLowerCase()}`;
+    const budgetItem: CategoryBudget = {
+      id: budgetId,
+      category: cleanCat,
+      monthlyLimit: Math.max(0, monthlyLimit),
+      scope,
+      createdAt: getTodayISO(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    setCategoryBudgets((prev) => {
+      const idx = prev.findIndex(
+        (b) => b.category.toLowerCase() === cleanCat && (b.scope || 'Family') === scope
+      );
+      let next: CategoryBudget[];
+      if (idx >= 0) {
+        next = [...prev];
+        next[idx] = budgetItem;
+      } else {
+        next = [...prev, budgetItem];
+      }
+      try {
+        localStorage.setItem(STORAGE_KEYS.BUDGETS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    setDoc(doc(db, 'category_budgets', budgetId), sanitizeForFirestore(budgetItem)).catch((err) => {
+      console.warn('Failed to sync category budget to Firestore:', err);
+    });
+  };
+
+  const deleteCategoryBudget = (idOrCategory: string) => {
+    setCategoryBudgets((prev) => {
+      const target = prev.find(
+        (b) => b.id === idOrCategory || b.category.toLowerCase() === idOrCategory.toLowerCase()
+      );
+      if (target) {
+        deleteDoc(doc(db, 'category_budgets', target.id)).catch(() => {});
+      }
+      const next = prev.filter(
+        (b) => b.id !== idOrCategory && b.category.toLowerCase() !== idOrCategory.toLowerCase()
+      );
+      try {
+        localStorage.setItem(STORAGE_KEYS.BUDGETS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
   };
 
   // Record an EMI Payment
@@ -715,10 +1019,10 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       title: `${loanName} - EMI Installment`,
       amount,
       date,
-      person: paidBy,
+      person: paidBy || currentUser,
       paymentMethod,
       fromAccountId: paymentMethod === 'bank' ? accountId : undefined,
-      fromCashPerson: paymentMethod === 'cash' ? paidBy : undefined,
+      fromCashPerson: paymentMethod === 'cash' ? (paidBy || currentUser) : undefined,
       loanId,
       category: loan?.type === 'home_loan' ? 'rent' : 'travel',
       notes: notes || `Monthly EMI payment for ${loanName}`,
@@ -754,7 +1058,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       title,
       amount,
       date,
-      person,
+      person: person || currentUser,
       transferType,
       fromAccountId,
       toAccountId,
@@ -893,23 +1197,23 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       if (Array.isArray(data.transactions) || Array.isArray(data.bankAccounts)) {
         if (data.bankAccounts) {
           setBankAccounts(data.bankAccounts);
-          data.bankAccounts.forEach((acc: BankAccount) => setDoc(doc(db, 'bank_accounts', acc.id), acc).catch(() => {}));
+          data.bankAccounts.forEach((acc: BankAccount) => setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(acc)).catch(() => {}));
         }
         if (data.cashWallets) {
           setCashWallets(data.cashWallets);
-          data.cashWallets.forEach((w: CashWallet) => setDoc(doc(db, 'cash_wallets', w.owner), w).catch(() => {}));
+          data.cashWallets.forEach((w: CashWallet) => setDoc(doc(db, 'cash_wallets', w.owner), sanitizeForFirestore(w)).catch(() => {}));
         }
         if (data.loans) {
           setLoans(data.loans);
-          data.loans.forEach((l: Loan) => setDoc(doc(db, 'loans', l.id), l).catch(() => {}));
+          data.loans.forEach((l: Loan) => setDoc(doc(db, 'loans', l.id), sanitizeForFirestore(l)).catch(() => {}));
         }
         if (data.transactions) {
           setTransactions(data.transactions);
-          data.transactions.forEach((t: Transaction) => setDoc(doc(db, 'transactions', t.id), t).catch(() => {}));
+          data.transactions.forEach((t: Transaction) => setDoc(doc(db, 'transactions', t.id), sanitizeForFirestore(t)).catch(() => {}));
         }
         if (data.customCategories) {
           setCustomCategories(data.customCategories);
-          data.customCategories.forEach((c: CustomCategory) => setDoc(doc(db, 'custom_categories', c.id), c).catch(() => {}));
+          data.customCategories.forEach((c: CustomCategory) => setDoc(doc(db, 'custom_categories', c.id), sanitizeForFirestore(c)).catch(() => {}));
         }
         if (data.users) setUsers(data.users);
         return true;
@@ -962,7 +1266,6 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   const resetToDemoData = () => {
-    // Delete from Firestore
     transactions.forEach((t) => deleteDoc(doc(db, 'transactions', t.id)).catch(() => {}));
     bankAccounts.forEach((a) => deleteDoc(doc(db, 'bank_accounts', a.id)).catch(() => {}));
     loans.forEach((l) => deleteDoc(doc(db, 'loans', l.id)).catch(() => {}));
@@ -986,6 +1289,9 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       value={{
         currentUser,
         users,
+        isLoggedIn,
+        loginUser,
+        logoutUser,
         isLocked,
         unlockWithPin,
         lockApp,
@@ -1000,10 +1306,12 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         loans,
         transactions,
         customCategories,
+        categoryBudgets,
         isLiveSyncing,
         addTransaction,
         editTransaction,
         deleteTransaction,
+        clearAllTransactions,
         addBankAccount,
         editBankAccount,
         deleteBankAccount,
@@ -1011,6 +1319,8 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         editLoan,
         deleteLoan,
         addCustomCategory,
+        setCategoryBudget,
+        deleteCategoryBudget,
         recordEmiPayment,
         transferMoney,
         familySummary,

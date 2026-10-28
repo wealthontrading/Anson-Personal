@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { ExpenseCategory, PaymentMethod, Person, Transaction } from '../../types/finance';
 import { CATEGORY_DETAILS, getTodayISO } from '../../utils/formatters';
-import { X, Receipt, Check, Upload, Trash2, Plus, Tag } from 'lucide-react';
+import { X, Receipt, IndianRupee, Check, Upload, Trash2, Plus, Tag, Lock } from 'lucide-react';
 
 interface AddExpenseModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (saved?: boolean) => void;
   editTx?: Transaction | null;
 }
 
@@ -38,7 +38,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       setAmount(String(editTx.amount));
       setTitle(editTx.title);
       setCategory(editTx.category || 'food');
-      setPaidBy(editTx.person);
+      setPaidBy(editTx.person || currentUser);
       setPaymentMethod(editTx.paymentMethod || 'bank');
       setSelectedAccountId(editTx.fromAccountId || '');
       setDate(editTx.date);
@@ -50,7 +50,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       setCategory('food');
       setPaidBy(currentUser);
       setPaymentMethod(bankAccounts.length > 0 ? 'bank' : 'cash');
-      const defaultAcc = bankAccounts.find((a) => a.owner === currentUser) || bankAccounts[0];
+      const defaultAcc = bankAccounts.find((a) => a.owner === currentUser) || bankAccounts.find((a) => a.owner === 'Joint') || bankAccounts[0];
       setSelectedAccountId(defaultAcc?.id || '');
       setDate(getTodayISO());
       setNotes('');
@@ -63,8 +63,9 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Filter available accounts strictly to logged in user and Joint accounts
   const availableAccounts = bankAccounts.filter(
-    (acc) => acc.owner === paidBy || acc.owner === 'Joint'
+    (acc) => acc.owner === currentUser || acc.owner === 'Joint'
   );
 
   const handleCreateCategory = (e: React.FormEvent) => {
@@ -112,10 +113,10 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
         amount: numAmount,
         title: title.trim(),
         category,
-        person: paidBy,
+        person: currentUser,
         paymentMethod,
         fromAccountId: paymentMethod !== 'cash' ? selectedAccountId : undefined,
-        fromCashPerson: paymentMethod === 'cash' ? paidBy : undefined,
+        fromCashPerson: paymentMethod === 'cash' ? currentUser : undefined,
         date,
         notes: notes.trim(),
         receiptImage,
@@ -126,17 +127,18 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
         title: title.trim(),
         amount: numAmount,
         date,
-        person: paidBy,
+        person: currentUser,
         category,
         paymentMethod,
         fromAccountId: paymentMethod !== 'cash' ? selectedAccountId : undefined,
-        fromCashPerson: paymentMethod === 'cash' ? paidBy : undefined,
+        fromCashPerson: paymentMethod === 'cash' ? currentUser : undefined,
         notes: notes.trim(),
         receiptImage,
       });
     }
 
-    onClose();
+    // Save entry and signal parent to close modal and switch to transactions tab
+    onClose(true);
   };
 
   // Filter custom categories of type 'expense'
@@ -153,14 +155,14 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onClose()}
               className="p-1.5 -ml-1.5 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
               title="Close window"
             >
               <X className="w-5 h-5" />
             </button>
             <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
-              <Receipt className="w-5 h-5" />
+              <IndianRupee className="w-5 h-5 stroke-[2.5]" />
             </div>
             <div>
               <h3 className="text-lg font-bold text-slate-900">
@@ -171,7 +173,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => onClose()}
             className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 transition"
           >
             Close
@@ -192,8 +194,8 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                 Expense Amount (₹) *
               </label>
               <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xl font-bold text-slate-400">
-                  ₹
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <IndianRupee className="w-4 h-4 stroke-[2.5]" />
                 </span>
                 <input
                   type="number"
@@ -226,40 +228,29 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
             </div>
           </div>
 
-          {/* Paid By: Anson or Dona */}
+          {/* Paid By: Locked to Logged-in Account */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-              Paid By *
+              Paid By (Logged-in Account)
             </label>
-            <div className="grid grid-cols-2 gap-3">
-              {(['Anson', 'Dona'] as Person[]).map((p) => {
-                const isSelected = paidBy === p;
-                return (
-                  <button
-                    type="button"
-                    key={p}
-                    onClick={() => {
-                      setPaidBy(p);
-                      const acc = bankAccounts.find((a) => a.owner === p);
-                      if (acc) setSelectedAccountId(acc.id);
-                    }}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition ${
-                      isSelected
-                        ? p === 'Anson'
-                          ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-xs'
-                          : 'bg-emerald-50 border-emerald-600 text-emerald-700 shadow-xs'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        p === 'Anson' ? 'bg-blue-600' : 'bg-emerald-600'
-                      }`}
-                    />
-                    {p}
-                  </button>
-                );
-              })}
+            <div className="p-3 bg-slate-50 border border-slate-200/90 rounded-2xl flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-8 h-8 rounded-xl text-white font-black text-sm flex items-center justify-center shadow-xs ${
+                    currentUser === 'Anson' ? 'bg-blue-600' : 'bg-emerald-600'
+                  }`}
+                >
+                  {currentUser[0]}
+                </div>
+                <div>
+                  <span className="text-sm font-extrabold text-slate-900 block leading-tight">{currentUser}</span>
+                  <span className="text-[11px] text-slate-500 font-medium">Auto-assigned to your account</span>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-xl flex items-center gap-1.5 shadow-2xs">
+                <Lock className="w-3 h-3 text-slate-400" />
+                <span>Account Locked</span>
+              </span>
             </div>
           </div>
 
@@ -479,7 +470,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
           <div className="pt-2 flex items-center gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onClose()}
               className="w-1/3 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-2xl transition"
             >
               Cancel

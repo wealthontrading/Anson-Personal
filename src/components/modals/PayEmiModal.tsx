@@ -6,7 +6,7 @@ import { X, Landmark, Check, AlertCircle } from 'lucide-react';
 
 interface PayEmiModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (saved?: boolean) => void;
   presetLoanId?: string;
 }
 
@@ -15,11 +15,11 @@ export const PayEmiModal: React.FC<PayEmiModalProps> = ({
   onClose,
   presetLoanId,
 }) => {
-  const { loans, bankAccounts, recordEmiPayment } = useFinance();
+  const { loans, bankAccounts, recordEmiPayment, currentUser } = useFinance();
 
   const [selectedLoanId, setSelectedLoanId] = useState<string>('');
   const [amount, setAmount] = useState<string>('');
-  const [paidBy, setPaidBy] = useState<Person>('Anson');
+  const [paidBy, setPaidBy] = useState<Person>(currentUser);
   const [paymentMethod, setPaymentMethod] = useState<'bank' | 'cash'>('bank');
   const [accountId, setAccountId] = useState<string>('');
   const [date, setDate] = useState<string>(getTodayISO());
@@ -40,14 +40,15 @@ export const PayEmiModal: React.FC<PayEmiModalProps> = ({
     const loan = activeLoans.find((l) => l.id === selectedLoanId);
     if (loan) {
       setAmount(String(loan.monthlyEmi));
-      setPaidBy(loan.owner);
+      setPaidBy(currentUser);
       const defAcc =
         bankAccounts.find((a) => a.id === loan.linkedAccountId) ||
-        bankAccounts.find((a) => a.owner === loan.owner) ||
+        bankAccounts.find((a) => a.owner === currentUser) ||
+        bankAccounts.find((a) => a.owner === 'Joint') ||
         bankAccounts[0];
       if (defAcc) setAccountId(defAcc.id);
     }
-  }, [selectedLoanId, activeLoans, bankAccounts]);
+  }, [selectedLoanId, activeLoans, bankAccounts, currentUser]);
 
   if (!isOpen) return null;
 
@@ -72,14 +73,14 @@ export const PayEmiModal: React.FC<PayEmiModalProps> = ({
     recordEmiPayment({
       loanId: selectedLoanId,
       amount: numAmount,
-      paidBy,
+      paidBy: currentUser,
       paymentMethod,
       accountId: paymentMethod === 'bank' ? accountId : undefined,
       date,
       notes: notes.trim(),
     });
 
-    onClose();
+    onClose(true);
   };
 
   return (
@@ -93,7 +94,7 @@ export const PayEmiModal: React.FC<PayEmiModalProps> = ({
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onClose()}
               className="p-1.5 -ml-1.5 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
               title="Close window"
             >
@@ -109,7 +110,7 @@ export const PayEmiModal: React.FC<PayEmiModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => onClose()}
             className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 transition"
           >
             Close
@@ -133,7 +134,7 @@ export const PayEmiModal: React.FC<PayEmiModalProps> = ({
             </p>
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onClose()}
               className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold"
             >
               Close Window
@@ -203,23 +204,13 @@ export const PayEmiModal: React.FC<PayEmiModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Paid By *
+                  Paid By (Logged-in Account)
                 </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['Anson', 'Dona'] as Person[]).map((p) => (
-                    <button
-                      type="button"
-                      key={p}
-                      onClick={() => setPaidBy(p)}
-                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition ${
-                        paidBy === p
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
+                <div className="py-2.5 px-3 bg-slate-50 border border-slate-200/90 rounded-xl flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-900">{currentUser}</span>
+                  <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-md">
+                    Account Locked
+                  </span>
                 </div>
               </div>
             </div>
@@ -309,7 +300,7 @@ export const PayEmiModal: React.FC<PayEmiModalProps> = ({
             <div className="pt-2 flex items-center gap-3">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={() => onClose()}
                 className="w-1/3 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-2xl transition"
               >
                 Cancel

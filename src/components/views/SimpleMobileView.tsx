@@ -17,6 +17,7 @@ import {
   Check,
   Trash2,
   Coins,
+  IndianRupee,
   Landmark,
   Smartphone,
   ChevronRight,
@@ -251,8 +252,8 @@ export const SimpleMobileView: React.FC<SimpleMobileViewProps> = ({
           <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1">
             Expense Amount (₹)
           </span>
-          <div className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight flex items-center justify-center gap-1">
-            <span className="text-emerald-600 font-extrabold text-2xl">₹</span>
+          <div className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight flex items-center justify-center gap-1.5">
+            <IndianRupee className="w-7 h-7 text-emerald-600 stroke-[3]" />
             <span>{amountStr || '0'}</span>
           </div>
           {amountStr && (
@@ -462,7 +463,7 @@ export const SimpleMobileView: React.FC<SimpleMobileViewProps> = ({
           onClick={onOpenIncome}
           className="p-3 bg-white rounded-2xl border border-slate-200/80 shadow-xs text-center hover:bg-slate-50 transition active:scale-95"
         >
-          <span className="block font-black text-lg text-emerald-600 mx-auto mb-1">₹</span>
+          <IndianRupee className="w-5 h-5 text-emerald-600 mx-auto mb-1 stroke-[2.5]" />
           <span className="text-[11px] font-bold text-slate-800 block">Add Income</span>
         </button>
 
@@ -503,20 +504,31 @@ export const SimpleMobileView: React.FC<SimpleMobileViewProps> = ({
             {todayTransactions.map((tx) => {
               const isIncome = tx.type === 'income';
               return (
-                <div key={tx.id} className="py-2.5 flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <p className="font-bold text-slate-900">{tx.title}</p>
-                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600">
-                        {tx.person}
-                      </span>
+                <div key={tx.id} className="py-2.5 flex items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                        isIncome
+                          ? 'bg-emerald-50 text-emerald-600'
+                          : 'bg-rose-50 text-rose-600'
+                      }`}
+                    >
+                      <IndianRupee className="w-4 h-4 stroke-[2.5]" />
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      {tx.paymentMethod === 'cash' ? 'Cash' : 'Bank A/C'} • {tx.category || tx.type}
-                    </p>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-bold text-slate-900 truncate">{tx.title}</p>
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 shrink-0">
+                          {tx.person}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                        {tx.paymentMethod === 'cash' ? 'Cash' : 'Bank A/C'} • {tx.category || tx.type}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     <span
                       className={`font-black ${
                         isIncome ? 'text-emerald-600' : 'text-rose-600'

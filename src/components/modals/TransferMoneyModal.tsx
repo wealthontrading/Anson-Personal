@@ -6,7 +6,7 @@ import { X, ArrowLeftRight, Check, Info } from 'lucide-react';
 
 interface TransferMoneyModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (saved?: boolean) => void;
 }
 
 export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
@@ -103,7 +103,7 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
       title: title.trim() || 'Money Transfer',
       amount: numAmount,
       date,
-      person,
+      person: currentUser,
       transferType,
       fromAccountId: transferType === 'bank_to_bank' || transferType === 'bank_to_cash' ? fromAccountId : undefined,
       toAccountId: transferType === 'bank_to_bank' || transferType === 'cash_to_bank' ? toAccountId : undefined,
@@ -112,7 +112,7 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
       notes: notes.trim(),
     });
 
-    onClose();
+    onClose(true);
   };
 
   return (
@@ -126,7 +126,7 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onClose()}
               className="p-1.5 -ml-1.5 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
               title="Close window"
             >
@@ -142,7 +142,7 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => onClose()}
             className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 transition"
           >
             Close
@@ -313,23 +313,13 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                Initiated By
+                Initiated By (Logged-in Account)
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                {(['Anson', 'Dona'] as Person[]).map((p) => (
-                  <button
-                    type="button"
-                    key={p}
-                    onClick={() => setPerson(p)}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition ${
-                      person === p
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
+              <div className="py-2 px-3 bg-slate-50 border border-slate-200/90 rounded-xl flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900">{currentUser}</span>
+                <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-md">
+                  Account Locked
+                </span>
               </div>
             </div>
 
@@ -364,7 +354,7 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
           <div className="pt-2 flex items-center gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onClose()}
               className="w-1/3 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-2xl transition"
             >
               Cancel
