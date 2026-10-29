@@ -40,6 +40,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
   } = useFinance();
 
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Group bank accounts by owner
   const ansonAccounts = bankAccounts.filter((a) => a.owner === 'Anson');
@@ -250,9 +251,27 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
                     >
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
-                    {bankAccounts.length > 1 && (
+                    {deletingId === acc.id ? (
+                      <div className="flex items-center gap-1 bg-rose-50 p-0.5 rounded-lg border border-rose-200">
+                        <button
+                          onClick={() => {
+                            deleteBankAccount(acc.id);
+                            setDeletingId(null);
+                          }}
+                          className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold transition"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          onClick={() => setDeletingId(null)}
+                          className="px-1.5 py-0.5 text-slate-500 hover:text-slate-800 text-[10px] font-medium"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
                       <button
-                        onClick={() => deleteBankAccount(acc.id)}
+                        onClick={() => setDeletingId(acc.id)}
                         className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
                         title="Delete Account"
                       >

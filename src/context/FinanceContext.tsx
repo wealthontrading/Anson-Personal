@@ -72,6 +72,7 @@ interface FinanceContextType {
   loans: Loan[];
   transactions: Transaction[];
   customCategories: CustomCategory[];
+  categoryColors: Record<string, string>;
   categoryBudgets: CategoryBudget[];
   isLiveSyncing: boolean;
 
@@ -89,7 +90,8 @@ interface FinanceContextType {
   editLoan: (id: string, updated: Partial<Loan>) => void;
   deleteLoan: (id: string) => void;
 
-  addCustomCategory: (name: string, type: 'expense' | 'income') => CustomCategory;
+  addCustomCategory: (name: string, type: 'expense' | 'income', color?: string) => CustomCategory;
+  setCategoryColor: (category: string, color: string) => void;
   setCategoryBudget: (category: string, monthlyLimit: number, scope?: 'Family' | 'Anson' | 'Dona') => void;
   deleteCategoryBudget: (idOrCategory: string) => void;
 
@@ -138,6 +140,7 @@ const STORAGE_KEYS = {
   CURRENT_USER: 'anson_dona_current_user_v6_safe',
   DASHBOARD_VIEW: 'anson_dona_view_v6_safe',
   CUSTOM_CATEGORIES: 'anson_dona_custom_categories_v6_safe',
+  CATEGORY_COLORS: 'anson_dona_category_colors_v7',
   BUDGETS: 'anson_dona_budgets_v6_safe',
   IS_LOGGED_IN: 'anson_dona_is_logged_in_v6_safe',
 };
@@ -268,6 +271,16 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   });
 
+  // 8. Custom Category Colors
+  const [categoryColors, setCategoryColors] = useState<Record<string, string>>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.CATEGORY_COLORS);
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
   // Sync state to localStorage as fast client-side cache
   useEffect(() => {
     try {
@@ -316,6 +329,12 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       localStorage.setItem(STORAGE_KEYS.BUDGETS, JSON.stringify(categoryBudgets));
     } catch {}
   }, [categoryBudgets]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.CATEGORY_COLORS, JSON.stringify(categoryColors));
+    } catch {}
+  }, [categoryColors]);
 
   useEffect(() => {
     try {
@@ -511,6 +530,30 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         }
       );
       unsubs.push(unsubBudgets);
+
+      // 8. Category Colors Live Listener
+      const unsubColors = onSnapshot(
+        collection(db, 'category_colors'),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const liveColors: Record<string, string> = {};
+            snapshot.forEach((docSnap) => {
+              const data = docSnap.data();
+              if (data && data.category && data.color) {
+                liveColors[data.category.toLowerCase().trim()] = data.color;
+              }
+            });
+            setCategoryColors(liveColors);
+            try {
+              localStorage.setItem(STORAGE_KEYS.CATEGORY_COLORS, JSON.stringify(liveColors));
+            } catch {}
+          }
+        },
+        (error) => {
+          console.warn('Firestore live category colors sync error:', error);
+        }
+      );
+      unsubs.push(unsubColors);
     } catch (err) {
       console.warn('Failed to attach Firestore listeners:', err);
     }
@@ -520,13 +563,15 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     };
   }, []);
 
-  // Login & Authentication Functions
+  // Login & Authentication Functions - Strict password verification required
   const loginUser = (person: Person, pin?: string): boolean => {
-    if (pin) {
-      const targetUser = users.find((u) => u.id === person);
-      if (targetUser && targetUser.pin && targetUser.pin !== pin && pin !== '9999') {
-        return false;
-      }
+    if (!pin || pin.trim() === '') {
+      return false;
+    }
+    const targetUser = users.find((u) => u.id === person);
+    const expectedPin = targetUser?.pin || (person === 'Anson' ? '1234' : '5678');
+    if (pin.trim() !== expectedPin && pin.trim() !== '9999') {
+      return false;
     }
     setCurrentUser(person);
     setIsLoggedIn(true);
@@ -814,18 +859,19 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   const addBankAccount = (accountData: Omit<BankAccount, 'id' | 'createdAt'>) => {
     const newAcc: BankAccount = {
       ...accountData,
-      id: `acc-${Date.now()}`,
+      id: `acc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       createdAt: getTodayISO(),
     };
     setBankAccounts((prev) => {
-      const next = [...prev, newAcc];
+      const next = [...prev.filter((a) => a.id !== newAcc.id), newAcc];
       try {
         localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(next));
       } catch {}
       return next;
     });
 
-    setDoc(doc(db, 'bank_accounts', newAcc.id), sanitizeForFirestore(newAcc)).catch((err) => {
+    const cleanData = sanitizeForFirestore(newAcc);
+    setDoc(doc(db, 'bank_accounts', newAcc.id), cleanData).catch((err) => {
       console.warn('Failed to sync new bank account to Firestore:', err);
     });
   };
@@ -910,11 +956,35 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   // Custom Categories
-  const addCustomCategory = (name: string, type: 'expense' | 'income'): CustomCategory => {
+  const setCategoryColor = (category: string, color: string) => {
+    const cleanCat = category.toLowerCase().trim();
+    setCategoryColors((prev) => {
+      const next = { ...prev, [cleanCat]: color };
+      try {
+        localStorage.setItem(STORAGE_KEYS.CATEGORY_COLORS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    const docId = `color-${cleanCat.replace(/[^a-z0-9]/g, '_')}`;
+    setDoc(
+      doc(db, 'category_colors', docId),
+      sanitizeForFirestore({
+        category: cleanCat,
+        color,
+        updatedAt: new Date().toISOString(),
+      })
+    ).catch((err) => {
+      console.warn('Failed to sync category color to Firestore:', err);
+    });
+  };
+
+  const addCustomCategory = (name: string, type: 'expense' | 'income', color?: string): CustomCategory => {
     const newCat: CustomCategory = {
       id: `cat-${type}-${Date.now()}-${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
       name: name.trim(),
       type,
+      color,
       createdAt: getTodayISO(),
     };
 
@@ -928,6 +998,10 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       } catch {}
       return next;
     });
+
+    if (color) {
+      setCategoryColor(name.trim(), color);
+    }
 
     setDoc(doc(db, 'custom_categories', newCat.id), sanitizeForFirestore(newCat)).catch((err) => {
       console.warn('Failed to sync custom category to Firestore:', err);
@@ -1306,6 +1380,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         loans,
         transactions,
         customCategories,
+        categoryColors,
         categoryBudgets,
         isLiveSyncing,
         addTransaction,
@@ -1319,6 +1394,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         editLoan,
         deleteLoan,
         addCustomCategory,
+        setCategoryColor,
         setCategoryBudget,
         deleteCategoryBudget,
         recordEmiPayment,

@@ -125,7 +125,7 @@ export const AddEditLoanModal: React.FC<AddEditLoanModalProps> = ({
       addLoan({
         name: isCustomType && customTypeInput.trim() ? `${name.trim()} (${customTypeInput.trim()})` : name.trim() || 'New Loan',
         type: finalType,
-        owner: currentUser,
+        owner,
         originalAmount: orig,
         outstandingPrincipal: out,
         monthlyEmi: emi,
@@ -145,11 +145,12 @@ export const AddEditLoanModal: React.FC<AddEditLoanModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
-      <div 
-        className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-100 my-8 animate-in fade-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs">
+      <div className="min-h-full flex items-center justify-center p-3 sm:p-6 py-6 sm:py-12">
+        <div 
+          className="w-full max-w-lg bg-white rounded-3xl p-5 sm:p-7 shadow-2xl border border-slate-100 my-auto animate-in fade-in zoom-in-95 duration-200"
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Header with Title and explicit Close button */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
           <div className="flex items-center gap-3">
@@ -241,13 +242,30 @@ export const AddEditLoanModal: React.FC<AddEditLoanModalProps> = ({
 
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                Loan Owner (Logged-in Account)
+                Loan Owner (Choose ID) *
               </label>
-              <div className="py-2.5 px-3 bg-slate-50 border border-slate-200/90 rounded-xl flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-900">{currentUser}</span>
-                <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-md">
-                  Account Locked
-                </span>
+              <div className="grid grid-cols-2 gap-2">
+                {(['Anson', 'Dona'] as const).map((o) => (
+                  <button
+                    type="button"
+                    key={o}
+                    onClick={() => setOwner(o)}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      owner === o
+                        ? o === 'Anson'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                          : 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        owner === o ? 'bg-white' : o === 'Anson' ? 'bg-blue-600' : 'bg-emerald-600'
+                      }`}
+                    />
+                    <span>{o}</span>
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -421,5 +439,6 @@ export const AddEditLoanModal: React.FC<AddEditLoanModalProps> = ({
         </form>
       </div>
     </div>
-  );
+  </div>
+);
 };

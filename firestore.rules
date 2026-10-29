@@ -23,6 +23,9 @@ service cloud.firestore {
     match /category_budgets/{document=**} {
       allow read, write: if true;
     }
+    match /category_colors/{document=**} {
+      allow read, write: if true;
+    }
     match /{document=**} {
       allow read, write: if true;
     }

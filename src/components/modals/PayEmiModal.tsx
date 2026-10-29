@@ -84,11 +84,12 @@ export const PayEmiModal: React.FC<PayEmiModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
-      <div 
-        className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-100 my-8 animate-in fade-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs">
+      <div className="min-h-full flex items-center justify-center p-3 sm:p-6 py-6 sm:py-12">
+        <div 
+          className="w-full max-w-lg bg-white rounded-3xl p-5 sm:p-7 shadow-2xl border border-slate-100 my-auto animate-in fade-in zoom-in-95 duration-200"
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Header with Title and explicit Close button */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
           <div className="flex items-center gap-3">
@@ -317,5 +318,6 @@ export const PayEmiModal: React.FC<PayEmiModalProps> = ({
         )}
       </div>
     </div>
-  );
+  </div>
+);
 };

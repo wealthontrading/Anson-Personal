@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { BankAccount } from '../../types/finance';
-import { X, Building2, Check, Plus } from 'lucide-react';
+import { X, Building2, Check, Plus, IndianRupee } from 'lucide-react';
 
 interface AddEditAccountModalProps {
   isOpen: boolean;
@@ -50,21 +50,19 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const numBalance = parseFloat(balance);
+    const cleanBalance = balance.replace(/[^0-9.]/g, '');
+    const numBalance = cleanBalance === '' ? 0 : parseFloat(cleanBalance);
     if (isNaN(numBalance) || numBalance < 0) {
-      setError('Please enter a valid balance');
-      return;
-    }
-    if (!name.trim()) {
-      setError('Please provide an account nickname (e.g. Salary Account)');
+      setError('Please enter a valid balance (0 or higher)');
       return;
     }
 
     const finalBankName = isCustomBank ? (customBankInput.trim() || 'Bank Account') : bankName;
+    const finalName = name.trim() || `${finalBankName} Account`;
 
     if (editAccount) {
       editBankAccount(editAccount.id, {
-        name: name.trim(),
+        name: finalName,
         bankName: finalBankName,
         accountNumberMasked: accountNumberMasked.trim() ? accountNumberMasked.trim() : undefined,
         owner,
@@ -72,7 +70,7 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
       });
     } else {
       addBankAccount({
-        name: name.trim(),
+        name: finalName,
         bankName: finalBankName,
         accountNumberMasked: accountNumberMasked.trim() ? accountNumberMasked.trim() : undefined,
         owner,
@@ -97,11 +95,12 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
-      <div 
-        className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 my-8 animate-in fade-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs">
+      <div className="min-h-full flex items-center justify-center p-3 sm:p-6 py-6 sm:py-12">
+        <div 
+          className="w-full max-w-md bg-white rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-100 my-auto animate-in fade-in zoom-in-95 duration-200"
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Header with Title and explicit Close button */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
           <div className="flex items-center gap-3">
@@ -142,11 +141,10 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
           {/* Account Nickname */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-              Account Nickname *
+              Account Nickname <span className="text-[11px] font-normal text-slate-400 lowercase">(optional, defaults to bank name)</span>
             </label>
             <input
               type="text"
-              required
               placeholder="e.g. Primary Salary Account, Savings"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -193,43 +191,63 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
             )}
           </div>
 
-          {/* Account Owner: Logged-in Profile or Joint */}
+          {/* Account Owner: Anson, Dona, or Joint (both IDs selectable) */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-              Account Owner (Logged-in Profile or Joint) *
+              Account Owner (Choose ID) *
             </label>
-            <div className="grid grid-cols-2 gap-2">
-              {([currentUser, 'Joint'] as const).map((o) => (
-                <button
-                  type="button"
-                  key={o}
-                  onClick={() => setOwner(o)}
-                  className={`py-2 px-3 rounded-xl border text-xs font-bold transition ${
-                    owner === o
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  {o === currentUser ? `${o} (Your Account)` : 'Joint Account'}
-                </button>
-              ))}
+            <div className="grid grid-cols-3 gap-2">
+              {(['Anson', 'Dona', 'Joint'] as const).map((o) => {
+                const isSelected = owner === o;
+                return (
+                  <button
+                    type="button"
+                    key={o}
+                    onClick={() => setOwner(o)}
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      isSelected
+                        ? o === 'Anson'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                          : o === 'Dona'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                          : 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        isSelected
+                          ? 'bg-white'
+                          : o === 'Anson'
+                          ? 'bg-blue-600'
+                          : o === 'Dona'
+                          ? 'bg-emerald-600'
+                          : 'bg-indigo-600'
+                      }`}
+                    />
+                    <span>{o === 'Joint' ? 'Joint' : o}</span>
+                  </button>
+                );
+              })}
             </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Select whether this account belongs to Anson, Dona, or is a Joint account for both.
+            </p>
           </div>
 
           {/* Balance (₹) */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-              {editAccount ? 'Current Balance (₹) *' : 'Opening Balance (₹) *'}
+              {editAccount ? 'Current Balance (₹)' : 'Opening Balance (₹)'} <span className="text-[11px] font-normal text-slate-400 lowercase">(optional, defaults to 0)</span>
             </label>
             <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xl font-bold text-slate-400">
-                ₹
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                <IndianRupee className="w-4 h-4 stroke-[2.5]" />
               </span>
               <input
                 type="number"
                 step="any"
                 inputMode="decimal"
-                required
                 placeholder="0"
                 value={balance}
                 onChange={(e) => {
@@ -276,5 +294,6 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
         </form>
       </div>
     </div>
-  );
+  </div>
+);
 };

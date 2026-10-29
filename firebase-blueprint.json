@@ -85,9 +85,21 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "type": { "type": "string", "enum": ["expense", "income"] },
+        "color": { "type": "string" },
         "createdAt": { "type": "string" }
       },
       "required": ["id", "name", "type"]
+    },
+    "category_colors": {
+      "title": "Category Color",
+      "description": "Custom color assignments for expense categories",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string" },
+        "color": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["category", "color"]
     },
     "users": {
       "title": "User Profile",

@@ -18,13 +18,14 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-sm"
       onClick={onClose}
     >
-      <div 
-        className="w-full max-w-xl bg-white rounded-3xl p-5 shadow-2xl border border-slate-100 flex flex-col max-h-[90vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="min-h-full flex items-center justify-center p-3 sm:p-6 py-6 sm:py-12">
+        <div 
+          className="w-full max-w-xl bg-white rounded-3xl p-5 shadow-2xl border border-slate-100 flex flex-col max-h-[90vh] my-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-slate-500" />
@@ -59,5 +60,6 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 };

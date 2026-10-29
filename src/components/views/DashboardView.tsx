@@ -3,9 +3,11 @@ import { useFinance } from '../../context/FinanceContext';
 import { IncomeExpenseChart } from '../dashboard/IncomeExpenseChart';
 import { CategoryDonutChart } from '../dashboard/CategoryDonutChart';
 import { CategoryBudgetProgressCard } from '../dashboard/CategoryBudgetProgressCard';
+import { MonthlySummaryCard } from '../dashboard/MonthlySummaryCard';
 import {
   formatDateDDMMYYYY,
   formatINR,
+  getCategoryColor,
   CATEGORY_DETAILS,
   INCOME_SOURCE_DETAILS,
 } from '../../utils/formatters';
@@ -55,6 +57,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     loans,
     bankAccounts,
     cashWallets,
+    categoryColors,
   } = useFinance();
 
   // Filter transactions for recent activity
@@ -194,6 +197,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </div>
       )}
+
+      {/* Real-time Stored Transactions Monthly Summary Card */}
+      <MonthlySummaryCard />
 
       {/* Primary KPI Metric Cards Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
@@ -527,9 +533,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           {tx.person}
                         </span>
                       </div>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        {formatDateDDMMYYYY(tx.date)} • {tx.paymentMethod === 'cash' ? 'Cash' : 'Bank'}
-                        {tx.notes ? ` • ${tx.notes}` : ''}
+                      <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                        <span>{formatDateDDMMYYYY(tx.date)}</span>
+                        <span>•</span>
+                        <span className="inline-flex items-center gap-1">
+                          <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{ backgroundColor: getCategoryColor(tx.category, categoryColors) }}
+                          />
+                          <span className="text-slate-600 font-medium capitalize">
+                            {CATEGORY_DETAILS[tx.category as keyof typeof CATEGORY_DETAILS]?.label ||
+                              INCOME_SOURCE_DETAILS[tx.category as keyof typeof INCOME_SOURCE_DETAILS]?.label ||
+                              tx.category ||
+                              (tx.paymentMethod === 'cash' ? 'Cash' : 'Bank')}
+                          </span>
+                        </span>
+                        {tx.notes ? <span>• {tx.notes}</span> : null}
                       </p>
                     </div>
                   </div>

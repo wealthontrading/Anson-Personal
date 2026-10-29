@@ -4,6 +4,7 @@ import { Person, Transaction, TransactionType } from '../../types/finance';
 import {
   formatDateDDMMYYYY,
   formatINR,
+  getCategoryColor,
   CATEGORY_DETAILS,
   INCOME_SOURCE_DETAILS,
 } from '../../utils/formatters';
@@ -42,6 +43,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     deleteTransaction,
     clearAllTransactions,
     bankAccounts,
+    categoryColors,
     exportTransactionsCSV,
   } = useFinance();
 
@@ -443,8 +445,16 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                               {tx.person}
                             </span>
                           </div>
-                          <p className="text-[10px] text-slate-400 mt-0.5">
-                            {formatDateDDMMYYYY(tx.date)} • {categoryLabel}
+                          <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                            <span>{formatDateDDMMYYYY(tx.date)}</span>
+                            <span>•</span>
+                            <span className="inline-flex items-center gap-1">
+                              <span
+                                className="w-1.5 h-1.5 rounded-full shrink-0"
+                                style={{ backgroundColor: getCategoryColor(tx.category, categoryColors) }}
+                              />
+                              <span className="text-slate-600 font-medium">{categoryLabel}</span>
+                            </span>
                           </p>
                         </div>
                       </div>
@@ -612,8 +622,14 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                         </td>
 
                         {/* Category */}
-                        <td className="py-3 px-4 whitespace-nowrap text-slate-600">
-                          {categoryLabel}
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg border border-slate-200/80 bg-slate-50 text-[11px] font-semibold text-slate-700">
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0 border border-black/10"
+                              style={{ backgroundColor: getCategoryColor(tx.category, categoryColors) }}
+                            />
+                            <span className="truncate max-w-[130px]">{categoryLabel}</span>
+                          </span>
                         </td>
 
                         {/* Account / Mode */}

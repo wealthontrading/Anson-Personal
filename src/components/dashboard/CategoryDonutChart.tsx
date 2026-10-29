@@ -1,6 +1,7 @@
 import React from 'react';
 import { Transaction } from '../../types/finance';
-import { CATEGORY_DETAILS, formatINR } from '../../utils/formatters';
+import { CATEGORY_DETAILS, formatINR, getCategoryColor } from '../../utils/formatters';
+import { useFinance } from '../../context/FinanceContext';
 
 interface CategoryDonutChartProps {
   transactions: Transaction[];
@@ -11,6 +12,7 @@ export const CategoryDonutChart: React.FC<CategoryDonutChartProps> = ({
   transactions,
   selectedMonth,
 }) => {
+  const { categoryColors } = useFinance();
   // Aggregate expenses for the selected month
   const categoryTotals: Record<string, number> = {};
   let totalExpenses = 0;
@@ -28,18 +30,7 @@ export const CategoryDonutChart: React.FC<CategoryDonutChartProps> = ({
 
   const sortedCategories = Object.entries(categoryTotals)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 7); // Top 7 categories
-
-  const colorPalette = [
-    '#e11d48', // rose-600
-    '#f97316', // orange-500
-    '#2563eb', // blue-600
-    '#8b5cf6', // violet-500
-    '#059669', // emerald-600
-    '#d97706', // amber-600
-    '#0284c7', // sky-600
-    '#64748b', // slate-500
-  ];
+    .slice(0, 8); // Top 8 categories
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between">
@@ -64,9 +55,9 @@ export const CategoryDonutChart: React.FC<CategoryDonutChartProps> = ({
           </div>
         ) : (
           <div className="space-y-3.5 mt-3">
-            {sortedCategories.map(([cat, amount], idx) => {
+            {sortedCategories.map(([cat, amount]) => {
               const percentage = Math.round((amount / totalExpenses) * 100);
-              const color = colorPalette[idx % colorPalette.length];
+              const color = getCategoryColor(cat, categoryColors);
               const details = CATEGORY_DETAILS[cat as keyof typeof CATEGORY_DETAILS];
               const label = cat === 'EMI Payments' ? 'Loan EMI Payments' : details?.label || cat;
 

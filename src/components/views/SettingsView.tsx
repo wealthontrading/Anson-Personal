@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useFinance } from '../../context/FinanceContext';
-import { Person } from '../../types/finance';
+import { ExpenseCategory, Person } from '../../types/finance';
+import { CATEGORY_DETAILS, COLOR_PALETTE_OPTIONS, getCategoryColor } from '../../utils/formatters';
 import {
   ShieldCheck,
   KeyRound,
@@ -12,6 +13,10 @@ import {
   User,
   AlertTriangle,
   Info,
+  Palette,
+  Plus,
+  Tag,
+  RotateCcw,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -24,6 +29,10 @@ export const SettingsView: React.FC = () => {
     exportBackupJSON,
     importBackupJSON,
     resetToDemoData,
+    customCategories,
+    categoryColors,
+    setCategoryColor,
+    addCustomCategory,
   } = useFinance();
 
   const [ansonPinInput, setAnsonPinInput] = useState<string>('');
@@ -31,6 +40,12 @@ export const SettingsView: React.FC = () => {
   const [pinSuccessMsg, setPinSuccessMsg] = useState<string>('');
   const [importStatus, setImportStatus] = useState<string>('');
   const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
+
+  // Category Color Customization state
+  const [editingCategoryKey, setEditingCategoryKey] = useState<string | null>(null);
+  const [newCatName, setNewCatName] = useState<string>('');
+  const [newCatColor, setNewCatColor] = useState<string>('#f97316');
+  const [categorySuccessMsg, setCategorySuccessMsg] = useState<string>('');
 
   const handleUpdatePin = (person: Person, pin: string) => {
     if (pin.length !== 4 || isNaN(Number(pin))) {
@@ -138,7 +153,7 @@ export const SettingsView: React.FC = () => {
 
                 <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between">
                   <span className="text-[11px] text-slate-500">
-                    PIN code: <strong className="font-mono text-slate-700">{u.pin}</strong>
+                    Security PIN: <strong className="font-mono text-slate-700">••••</strong>
                   </span>
                   {!isCurrent && (
                     <button
@@ -203,6 +218,197 @@ export const SettingsView: React.FC = () => {
                 Update
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Category Colors & Customization */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <Palette className="w-4 h-4 text-slate-700" />
+            <h3 className="text-sm font-bold text-slate-900">Expense Category Colors & Customization</h3>
+          </div>
+          <span className="text-[11px] font-semibold text-slate-500 hidden sm:inline">
+            Synced live to all charts & transaction lists
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Assign custom colors to any expense category. Changes update immediately across your dashboard charts, budget progress bars, and transaction records.
+        </p>
+
+        {categorySuccessMsg && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-xl flex items-center gap-2 animate-in fade-in">
+            <Check className="w-4 h-4 text-emerald-600" />
+            <span>{categorySuccessMsg}</span>
+          </div>
+        )}
+
+        {/* Categories Grid with Color Swatches */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          {/* Preset Categories */}
+          {(Object.keys(CATEGORY_DETAILS) as ExpenseCategory[]).map((cat) => {
+            const details = CATEGORY_DETAILS[cat];
+            const currentColor = getCategoryColor(cat, categoryColors);
+            const isEditing = editingCategoryKey === cat;
+
+            return (
+              <div
+                key={cat}
+                className="p-3 rounded-2xl border border-slate-200/80 bg-slate-50/50 hover:bg-slate-50 transition flex flex-col justify-between gap-2"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="w-4 h-4 rounded-full shrink-0 border border-black/10 shadow-2xs"
+                      style={{ backgroundColor: currentColor }}
+                    />
+                    <span className="text-xs font-bold text-slate-900 truncate">
+                      {details.label}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditingCategoryKey(isEditing ? null : cat)}
+                    className="text-[11px] font-bold text-slate-500 hover:text-slate-800 px-2 py-0.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 transition"
+                  >
+                    {isEditing ? 'Close' : 'Change Color'}
+                  </button>
+                </div>
+
+                {isEditing && (
+                  <div className="pt-2 border-t border-slate-200 animate-in fade-in duration-150">
+                    <p className="text-[10px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider">
+                      Select Palette Color:
+                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {COLOR_PALETTE_OPTIONS.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => {
+                            setCategoryColor(cat, c);
+                            setCategorySuccessMsg(`Color for ${details.label} updated!`);
+                            setTimeout(() => setCategorySuccessMsg(''), 2500);
+                          }}
+                          className={`w-5 h-5 rounded-full border transition-transform ${
+                            currentColor === c
+                              ? 'scale-125 ring-2 ring-slate-900 ring-offset-1 border-white'
+                              : 'border-slate-300 hover:scale-110'
+                          }`}
+                          style={{ backgroundColor: c }}
+                          title={c}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* User Custom Categories */}
+          {customCategories.map((c) => {
+            const currentColor = getCategoryColor(c.name, categoryColors);
+            const isEditing = editingCategoryKey === c.name;
+
+            return (
+              <div
+                key={c.id}
+                className="p-3 rounded-2xl border border-rose-200/80 bg-rose-50/30 hover:bg-rose-50/50 transition flex flex-col justify-between gap-2"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="w-4 h-4 rounded-full shrink-0 border border-black/10 shadow-2xs"
+                      style={{ backgroundColor: currentColor }}
+                    />
+                    <span className="text-xs font-bold text-rose-950 truncate">
+                      🏷️ {c.name}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditingCategoryKey(isEditing ? null : c.name)}
+                    className="text-[11px] font-bold text-rose-700 hover:text-rose-900 px-2 py-0.5 rounded-lg bg-white border border-rose-200 hover:bg-rose-100 transition"
+                  >
+                    {isEditing ? 'Close' : 'Change Color'}
+                  </button>
+                </div>
+
+                {isEditing && (
+                  <div className="pt-2 border-t border-rose-200 animate-in fade-in duration-150">
+                    <p className="text-[10px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider">
+                      Select Palette Color:
+                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {COLOR_PALETTE_OPTIONS.map((col) => (
+                        <button
+                          key={col}
+                          type="button"
+                          onClick={() => {
+                            setCategoryColor(c.name, col);
+                            setCategorySuccessMsg(`Color for ${c.name} updated!`);
+                            setTimeout(() => setCategorySuccessMsg(''), 2500);
+                          }}
+                          className={`w-5 h-5 rounded-full border transition-transform ${
+                            currentColor === col
+                              ? 'scale-125 ring-2 ring-slate-900 ring-offset-1 border-white'
+                              : 'border-slate-300 hover:scale-110'
+                          }`}
+                          style={{ backgroundColor: col }}
+                          title={col}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Add New Custom Category with Color */}
+        <div className="pt-3 border-t border-slate-100">
+          <h4 className="text-xs font-bold text-slate-800 mb-2 flex items-center gap-1.5">
+            <Plus className="w-3.5 h-3.5 text-blue-600" />
+            Add New Custom Category & Color
+          </h4>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <input
+              type="text"
+              placeholder="e.g. Vacation, Subscriptions, Fitness"
+              value={newCatName}
+              onChange={(e) => setNewCatName(e.target.value)}
+              className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="flex items-center gap-1.5 p-1 bg-slate-50 border border-slate-200 rounded-xl overflow-x-auto">
+              {COLOR_PALETTE_OPTIONS.slice(0, 8).map((col) => (
+                <button
+                  key={col}
+                  type="button"
+                  onClick={() => setNewCatColor(col)}
+                  className={`w-5 h-5 rounded-full border transition-transform shrink-0 ${
+                    newCatColor === col ? 'scale-125 ring-2 ring-slate-900 border-white' : 'border-slate-300'
+                  }`}
+                  style={{ backgroundColor: col }}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (!newCatName.trim()) return;
+                addCustomCategory(newCatName.trim(), 'expense', newCatColor);
+                setCategorySuccessMsg(`Category "${newCatName.trim()}" created!`);
+                setTimeout(() => setCategorySuccessMsg(''), 2500);
+                setNewCatName('');
+              }}
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition shrink-0"
+            >
+              Add Category
+            </button>
           </div>
         </div>
       </div>

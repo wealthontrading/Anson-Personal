@@ -15,36 +15,28 @@ export const LoginModal: React.FC = () => {
   const handleSelectProfile = (person: Person) => {
     setSelectedPerson(person);
     setError('');
-    const userProfile = users.find((u) => u.id === person);
-    if (userProfile?.pin) {
-      setShowPinInput(true);
-      setPin('');
-    } else {
-      // No PIN required, log in directly
-      loginUser(person);
-    }
+    setShowPinInput(true);
+    setPin('');
   };
 
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPerson) return;
-    const success = loginUser(selectedPerson, pin);
+    if (!pin || pin.trim().length !== 4) {
+      setError('Please enter your 4-digit security password');
+      return;
+    }
+    const success = loginUser(selectedPerson, pin.trim());
     if (!success) {
-      setError('Incorrect 4-digit PIN. Please try again.');
+      setError('Incorrect 4-digit password. Please try again.');
       setPin('');
     }
   };
 
-  const handleDirectLogin = (person: Person) => {
-    // Allows immediate 1-tap entry without PIN roadblock if user wants easy access
-    const userProfile = users.find((u) => u.id === person);
-    const pinToUse = userProfile?.pin || undefined;
-    loginUser(person, pinToUse);
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-100 text-center relative overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="min-h-full flex items-center justify-center p-3 sm:p-6 py-6 sm:py-12">
+        <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-100 text-center relative overflow-hidden my-auto">
         {/* Top Accent Gradient */}
         <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-500" />
 
@@ -141,7 +133,7 @@ export const LoginModal: React.FC = () => {
 
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
-                Enter 4-Digit Security PIN
+                Enter 4-Digit Security Password
               </label>
               <input
                 type="password"
@@ -154,9 +146,6 @@ export const LoginModal: React.FC = () => {
                 onChange={(e) => setPin(e.target.value)}
                 className="w-48 mx-auto text-center tracking-[0.5em] text-2xl font-bold py-3 bg-slate-50 border border-slate-300 rounded-2xl focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500 transition"
               />
-              <p className="text-[11px] text-slate-400 mt-1.5">
-                Default PIN: Anson: 1234 • Dona: 5678 (or Master: 9999)
-              </p>
             </div>
 
             <div className="flex flex-col gap-2 pt-2">
@@ -164,15 +153,7 @@ export const LoginModal: React.FC = () => {
                 type="submit"
                 className="w-full py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md transition cursor-pointer"
               >
-                Confirm & Log In Permanently
-              </button>
-
-              <button
-                type="button"
-                onClick={() => selectedPerson && handleDirectLogin(selectedPerson)}
-                className="text-xs font-bold text-slate-600 hover:text-slate-900 py-1"
-              >
-                Skip PIN (Quick 1-Tap Entry)
+                Sign In to This Device
               </button>
 
               <button
@@ -182,7 +163,7 @@ export const LoginModal: React.FC = () => {
                   setSelectedPerson(null);
                   setError('');
                 }}
-                className="text-xs text-slate-400 hover:text-slate-600 py-1"
+                className="text-xs text-slate-400 hover:text-slate-600 py-1 cursor-pointer"
               >
                 ← Back to profile selection
               </button>
@@ -191,5 +172,6 @@ export const LoginModal: React.FC = () => {
         )}
       </div>
     </div>
-  );
+  </div>
+);
 };

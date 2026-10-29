@@ -1,7 +1,7 @@
 import React from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { ExpenseCategory, Transaction } from '../../types/finance';
-import { CATEGORY_DETAILS, formatINR, getCurrentMonthStr } from '../../utils/formatters';
+import { CATEGORY_DETAILS, formatINR, getCategoryColor, getCurrentMonthStr } from '../../utils/formatters';
 import {
   Target,
   AlertTriangle,
@@ -22,7 +22,7 @@ export const CategoryBudgetProgressCard: React.FC<CategoryBudgetProgressCardProp
   onOpenBudgetModal,
   transactions,
 }) => {
-  const { categoryBudgets, activeDashboard, selectedMonth } = useFinance();
+  const { categoryBudgets, categoryColors, activeDashboard, selectedMonth } = useFinance();
 
   // Target month filtering
   const targetMonth = selectedMonth === 'all' ? getCurrentMonthStr() : selectedMonth;
@@ -196,6 +196,10 @@ export const CategoryBudgetProgressCard: React.FC<CategoryBudgetProgressCardProp
                 {/* Category Header */}
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0 border border-black/10"
+                      style={{ backgroundColor: getCategoryColor(item.category, categoryColors) }}
+                    />
                     <span className="text-xs font-extrabold text-slate-900 capitalize">
                       {item.label}
                     </span>

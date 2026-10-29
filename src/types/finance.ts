@@ -142,6 +142,7 @@ export interface CustomCategory {
   id: string;
   name: string;
   type: 'expense' | 'income';
+  color?: string; // Hex color code e.g. '#f97316'
   createdAt: string;
 }
 

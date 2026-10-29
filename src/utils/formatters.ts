@@ -109,3 +109,76 @@ export const LOAN_TYPE_LABELS: Record<LoanType, string> = {
   education_loan: 'Education Loan',
   other: 'Other Loan',
 };
+
+export const DEFAULT_CATEGORY_COLORS: Record<string, string> = {
+  food: '#f97316', // Orange
+  groceries: '#10b981', // Emerald
+  rent: '#3b82f6', // Blue
+  electricity: '#f59e0b', // Amber
+  water: '#06b6d4', // Cyan
+  internet: '#6366f1', // Indigo
+  travel: '#0ea5e9', // Sky
+  fuel: '#eab308', // Yellow
+  shopping: '#ec4899', // Pink
+  medical: '#f43f5e', // Rose
+  insurance: '#14b8a6', // Teal
+  entertainment: '#a855f7', // Purple
+  family: '#8b5cf6', // Violet
+  education: '#059669', // Green
+  other: '#64748b', // Slate
+  'EMI Payments': '#4f46e5', // Indigo
+};
+
+export const COLOR_PALETTE_OPTIONS = [
+  '#f97316', // Orange
+  '#10b981', // Emerald
+  '#3b82f6', // Blue
+  '#f59e0b', // Amber
+  '#06b6d4', // Cyan
+  '#6366f1', // Indigo
+  '#0ea5e9', // Sky
+  '#eab308', // Yellow
+  '#ec4899', // Pink
+  '#f43f5e', // Rose
+  '#14b8a6', // Teal
+  '#a855f7', // Purple
+  '#8b5cf6', // Violet
+  '#059669', // Green
+  '#64748b', // Slate
+  '#d946ef', // Fuchsia
+  '#84cc16', // Lime
+  '#e11d48', // Rose Red
+];
+
+export function getCategoryColor(
+  categoryKey?: string,
+  customColors?: Record<string, string>
+): string {
+  if (!categoryKey) return '#64748b';
+  const cleanKey = categoryKey.toLowerCase().trim();
+
+  // 1. Check custom overrides first
+  if (customColors && customColors[cleanKey]) {
+    return customColors[cleanKey];
+  }
+  if (customColors && customColors[categoryKey]) {
+    return customColors[categoryKey];
+  }
+
+  // 2. Check default category colors
+  if (DEFAULT_CATEGORY_COLORS[cleanKey]) {
+    return DEFAULT_CATEGORY_COLORS[cleanKey];
+  }
+  if (DEFAULT_CATEGORY_COLORS[categoryKey]) {
+    return DEFAULT_CATEGORY_COLORS[categoryKey];
+  }
+
+  // 3. Deterministic hash palette fallback for any other custom category
+  let hash = 0;
+  for (let i = 0; i < categoryKey.length; i++) {
+    hash = categoryKey.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % COLOR_PALETTE_OPTIONS.length;
+  return COLOR_PALETTE_OPTIONS[index];
+}
+

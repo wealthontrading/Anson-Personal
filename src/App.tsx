@@ -90,8 +90,9 @@ function MainApp() {
     }
   };
 
-  // Close modal safely and navigate to transactions view if an entry was saved
+  // Close modal safely and navigate to appropriate view if an entry was saved
   const closeModal = (saved?: boolean) => {
+    const closedType = activeModal;
     setActiveModal(null);
     setEditingAccount(null);
     setEditingLoan(null);
@@ -99,12 +100,24 @@ function MainApp() {
     setPresetLoanId(undefined);
 
     if (saved) {
-      setCurrentTab('transactions');
+      if (closedType === 'add_account' || closedType === 'edit_account') {
+        setCurrentTab('accounts');
+        if (typeof window !== 'undefined') {
+          window.history.replaceState({ tab: 'accounts', isSimple: false, isModal: false }, '', '#accounts');
+        }
+      } else if (closedType === 'add_loan' || closedType === 'edit_loan' || closedType === 'emi') {
+        setCurrentTab('emis');
+        if (typeof window !== 'undefined') {
+          window.history.replaceState({ tab: 'emis', isSimple: false, isModal: false }, '', '#emis');
+        }
+      } else {
+        setCurrentTab('transactions');
+        if (typeof window !== 'undefined') {
+          window.history.replaceState({ tab: 'transactions', isSimple: false, isModal: false }, '', '#transactions');
+        }
+      }
       setIsSimpleMode(false);
       modalHistoryPushedRef.current = false;
-      if (typeof window !== 'undefined') {
-        window.history.replaceState({ tab: 'transactions', isSimple: false, isModal: false }, '', '#transactions');
-      }
       return;
     }
 

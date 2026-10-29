@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { ExpenseCategory } from '../../types/finance';
-import { CATEGORY_DETAILS, formatINR, getCurrentMonthStr } from '../../utils/formatters';
+import { CATEGORY_DETAILS, formatINR, getCategoryColor, getCurrentMonthStr } from '../../utils/formatters';
 import { SUGGESTED_BUDGET_TEMPLATES } from '../../data/seedData';
 import {
   X,
@@ -30,6 +30,7 @@ export const BudgetManagementModal: React.FC<BudgetManagementModalProps> = ({
     setCategoryBudget,
     deleteCategoryBudget,
     customCategories,
+    categoryColors,
     transactions,
     activeDashboard,
     selectedMonth,
@@ -123,11 +124,12 @@ export const BudgetManagementModal: React.FC<BudgetManagementModalProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
-      <div
-        className="w-full max-w-xl bg-white rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-100 my-8 animate-in fade-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs">
+      <div className="min-h-full flex items-center justify-center p-3 sm:p-6 py-6 sm:py-12">
+        <div
+          className="w-full max-w-xl bg-white rounded-3xl p-5 sm:p-7 shadow-2xl border border-slate-100 my-auto animate-in fade-in zoom-in-95 duration-200"
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
           <div className="flex items-center gap-3">
@@ -343,6 +345,10 @@ export const BudgetManagementModal: React.FC<BudgetManagementModalProps> = ({
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0 border border-black/10"
+                          style={{ backgroundColor: getCategoryColor(b.category, categoryColors) }}
+                        />
                         <span className="text-xs font-extrabold text-slate-900 capitalize">{label}</span>
                         {isOver && (
                           <span className="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-rose-100 text-rose-700">
@@ -416,5 +422,6 @@ export const BudgetManagementModal: React.FC<BudgetManagementModalProps> = ({
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 };

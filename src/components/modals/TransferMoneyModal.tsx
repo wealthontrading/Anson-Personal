@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { Person, TransferType } from '../../types/finance';
 import { getTodayISO } from '../../utils/formatters';
@@ -34,6 +34,35 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
   const [toCashPerson, setToCashPerson] = useState<Person>('Dona');
   const [notes, setNotes] = useState<string>('');
   const [error, setError] = useState<string>('');
+
+  useEffect(() => {
+    if (isOpen) {
+      if (bankAccounts.length >= 2) {
+        setTransferType('bank_to_bank');
+        setTitle('Account Transfer');
+      } else if (bankAccounts.length === 1) {
+        setTransferType('bank_to_cash');
+        setTitle('ATM Cash Withdrawal');
+      } else {
+        setTransferType('cash_to_cash');
+        setTitle('Cash Handover / Transfer');
+      }
+      setAmount('');
+      setNotes('');
+      setError('');
+    }
+  }, [isOpen, bankAccounts.length]);
+
+  useEffect(() => {
+    if (bankAccounts.length > 0) {
+      if (!fromAccountId || !bankAccounts.some((a) => a.id === fromAccountId)) {
+        setFromAccountId(bankAccounts[0].id);
+      }
+      if (!toAccountId || !bankAccounts.some((a) => a.id === toAccountId)) {
+        setToAccountId(bankAccounts[1]?.id || bankAccounts[0].id);
+      }
+    }
+  }, [bankAccounts, fromAccountId, toAccountId]);
 
   if (!isOpen) return null;
 
@@ -116,11 +145,12 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
-      <div 
-        className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-100 my-8 animate-in fade-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs">
+      <div className="min-h-full flex items-center justify-center p-3 sm:p-6 py-6 sm:py-12">
+        <div 
+          className="w-full max-w-lg bg-white rounded-3xl p-5 sm:p-7 shadow-2xl border border-slate-100 my-auto animate-in fade-in zoom-in-95 duration-200"
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Header with Title and explicit Close button */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
           <div className="flex items-center gap-3">
@@ -370,5 +400,6 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
         </form>
       </div>
     </div>
-  );
+  </div>
+);
 };

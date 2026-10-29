@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { ExpenseCategory, PaymentMethod, Person, Transaction } from '../../types/finance';
-import { formatINR, formatDateDDMMYYYY, getTodayISO, CATEGORY_DETAILS } from '../../utils/formatters';
+import { formatINR, formatDateDDMMYYYY, getTodayISO, CATEGORY_DETAILS, getCategoryColor } from '../../utils/formatters';
 import {
   Zap,
   ShoppingBag,
@@ -47,6 +47,7 @@ export const SimpleMobileView: React.FC<SimpleMobileViewProps> = ({
     bankAccounts,
     transactions,
     customCategories,
+    categoryColors,
     addCustomCategory,
     addTransaction,
     deleteTransaction,
@@ -353,16 +354,21 @@ export const SimpleMobileView: React.FC<SimpleMobileViewProps> = ({
             {quickCategories.map((cat) => {
               const Icon = cat.icon;
               const isSelected = selectedCategory === cat.id;
+              const color = getCategoryColor(cat.id, categoryColors);
               return (
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.id)}
-                  className={`p-2.5 rounded-2xl border flex flex-col items-center justify-center text-center transition active:scale-95 ${
+                  className={`p-2.5 rounded-2xl border flex flex-col items-center justify-center text-center transition active:scale-95 relative ${
                     isSelected
                       ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
                       : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                   }`}
                 >
+                  <span
+                    className="w-2 h-2 rounded-full absolute top-2 right-2 border border-black/10"
+                    style={{ backgroundColor: color }}
+                  />
                   <Icon className={`w-5 h-5 mb-1 ${isSelected ? 'text-emerald-400' : 'text-slate-500'}`} />
                   <span className="text-[10px] font-bold leading-tight truncate w-full">
                     {cat.label}
@@ -376,16 +382,21 @@ export const SimpleMobileView: React.FC<SimpleMobileViewProps> = ({
               .filter((c) => c.type === 'expense')
               .map((c) => {
                 const isSelected = selectedCategory === c.name;
+                const color = getCategoryColor(c.name, categoryColors);
                 return (
                   <button
                     key={c.id}
                     onClick={() => setSelectedCategory(c.name)}
-                    className={`p-2.5 rounded-2xl border flex flex-col items-center justify-center text-center transition active:scale-95 ${
+                    className={`p-2.5 rounded-2xl border flex flex-col items-center justify-center text-center transition active:scale-95 relative ${
                       isSelected
                         ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
                         : 'bg-rose-50/70 border-rose-200 text-rose-900 hover:bg-rose-100'
                     }`}
                   >
+                    <span
+                      className="w-2 h-2 rounded-full absolute top-2 right-2 border border-black/10"
+                      style={{ backgroundColor: color }}
+                    />
                     <span className="text-sm mb-0.5">🏷️</span>
                     <span className="text-[10px] font-bold leading-tight truncate w-full">
                       {c.name}
@@ -522,8 +533,16 @@ export const SimpleMobileView: React.FC<SimpleMobileViewProps> = ({
                           {tx.person}
                         </span>
                       </div>
-                      <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-                        {tx.paymentMethod === 'cash' ? 'Cash' : 'Bank A/C'} • {tx.category || tx.type}
+                      <p className="text-[10px] text-slate-400 mt-0.5 truncate flex items-center gap-1.5">
+                        <span>{tx.paymentMethod === 'cash' ? 'Cash' : 'Bank A/C'}</span>
+                        <span>•</span>
+                        <span className="inline-flex items-center gap-1">
+                          <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{ backgroundColor: getCategoryColor(tx.category, categoryColors) }}
+                          />
+                          <span className="text-slate-600 font-medium capitalize">{tx.category || tx.type}</span>
+                        </span>
                       </p>
                     </div>
                   </div>

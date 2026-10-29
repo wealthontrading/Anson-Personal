@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { IncomeSource, Person } from '../../types/finance';
 import { getTodayISO, INCOME_SOURCE_DETAILS } from '../../utils/formatters';
@@ -17,10 +17,7 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
   const [destinationType, setDestinationType] = useState<'bank' | 'cash'>(() => {
     return bankAccounts.length > 0 ? 'bank' : 'cash';
   });
-  const [selectedAccountId, setSelectedAccountId] = useState<string>(() => {
-    const defaultAcc = bankAccounts.find((a) => a.owner === currentUser) || bankAccounts.find((a) => a.owner === 'Joint') || bankAccounts[0];
-    return defaultAcc?.id || '';
-  });
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [date, setDate] = useState<string>(getTodayISO());
   const [notes, setNotes] = useState<string>('');
   const [error, setError] = useState<string>('');
@@ -29,12 +26,34 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
   const [isAddingSource, setIsAddingSource] = useState<boolean>(false);
   const [newSourceName, setNewSourceName] = useState<string>('');
 
-  if (!isOpen) return null;
+  // Sort available accounts so current user & joint accounts appear first, but all family accounts remain accessible
+  const availableAccounts = [...bankAccounts].sort((a, b) => {
+    const aMatch = a.owner === currentUser ? -2 : a.owner === 'Joint' ? -1 : 0;
+    const bMatch = b.owner === currentUser ? -2 : b.owner === 'Joint' ? -1 : 0;
+    return aMatch - bMatch;
+  });
 
-  // Filter accounts strictly to logged-in user and Joint accounts
-  const availableAccounts = bankAccounts.filter(
-    (acc) => acc.owner === currentUser || acc.owner === 'Joint'
-  );
+  // Ensure an account is always selected when bank accounts exist
+  useEffect(() => {
+    if ((!selectedAccountId || !availableAccounts.some((a) => a.id === selectedAccountId)) && availableAccounts.length > 0) {
+      setSelectedAccountId(availableAccounts[0].id);
+    }
+  }, [availableAccounts, selectedAccountId]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setAmount('');
+      setSource('salary');
+      setDestinationType(bankAccounts.length > 0 ? 'bank' : 'cash');
+      const defaultAcc = bankAccounts.find((a) => a.owner === currentUser) || bankAccounts.find((a) => a.owner === 'Joint') || bankAccounts[0];
+      setSelectedAccountId(defaultAcc?.id || '');
+      setDate(getTodayISO());
+      setNotes('');
+      setError('');
+      setIsAddingSource(false);
+      setNewSourceName('');
+    }
+  }, [isOpen, currentUser, bankAccounts]);
 
   const handleCreateSource = (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,12 +106,15 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
 
   const incomeCustomCats = customCategories.filter((c) => c.type === 'income');
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
-      <div 
-        className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-100 my-8 animate-in fade-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs">
+      <div className="min-h-full flex items-center justify-center p-3 sm:p-6 py-6 sm:py-12">
+        <div 
+          className="w-full max-w-lg bg-white rounded-3xl p-5 sm:p-7 shadow-2xl border border-slate-100 my-auto animate-in fade-in zoom-in-95 duration-200"
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Header with Title and explicit Close button */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
           <div className="flex items-center gap-3">
@@ -317,7 +339,7 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
                   >
                     {availableAccounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
-                        {acc.bankName} - {acc.name} ({acc.accountNumberMasked || 'A/C'}) • Bal: ₹{acc.currentBalance.toLocaleString('en-IN')}
+                        [{acc.owner}] {acc.bankName} - {acc.name} ({acc.accountNumberMasked || 'A/C'}) • Bal: ₹{acc.currentBalance.toLocaleString('en-IN')}
                       </option>
                     ))}
                   </select>
@@ -374,5 +396,6 @@ export const AddIncomeModal: React.FC<AddIncomeModalProps> = ({ isOpen, onClose 
         </form>
       </div>
     </div>
-  );
+  </div>
+);
 };

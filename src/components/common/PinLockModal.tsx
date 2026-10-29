@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useFinance } from '../../context/FinanceContext';
-import { ShieldCheck, Lock, UserCheck, AlertCircle, KeyRound } from 'lucide-react';
+import { ShieldCheck, Lock, UserCheck, AlertCircle } from 'lucide-react';
 import { Person } from '../../types/finance';
 
 export const PinLockModal: React.FC = () => {
@@ -40,8 +40,9 @@ export const PinLockModal: React.FC = () => {
   const activeUserProfile = users.find((u) => u.id === currentUser);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
-      <div className="w-full max-w-sm bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-100 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-md">
+      <div className="min-h-full flex items-center justify-center p-3 sm:p-6 py-6 sm:py-12">
+        <div className="w-full max-w-sm bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-100 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200 my-auto">
         
         {/* Brand Icon & Heading */}
         <div className="w-16 h-16 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-lg mb-4">
@@ -139,18 +140,8 @@ export const PinLockModal: React.FC = () => {
             ⌫
           </button>
         </div>
-
-        {/* Help hint */}
-        <div className="mt-6 pt-4 border-t border-slate-100 w-full text-center">
-          <div className="inline-flex items-center gap-1.5 text-[11px] text-slate-400 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200/60">
-            <KeyRound className="w-3 h-3 text-slate-500" />
-            <span>
-              Default PIN: <strong className="text-slate-700">1234</strong> (Anson) / <strong className="text-slate-700">5678</strong> (Dona)
-            </span>
-          </div>
-        </div>
-
       </div>
     </div>
-  );
+  </div>
+);
 };
