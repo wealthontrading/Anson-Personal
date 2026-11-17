@@ -1,21 +1,16 @@
 import React, { useState } from 'react';
 import { useFinance } from '../../context/FinanceContext';
-import { BankAccount, Person } from '../../types/finance';
+import { BankAccount } from '../../types/finance';
 import { formatINR, formatDateDDMMYYYY } from '../../utils/formatters';
 import {
   Building2,
   Wallet,
   Plus,
   ArrowLeftRight,
-  TrendingUp,
-  TrendingDown,
   Edit2,
   Trash2,
-  ArrowDownLeft,
-  ArrowUpRight,
   IndianRupee,
-  ShieldCheck,
-  ChevronRight,
+  Star,
 } from 'lucide-react';
 
 interface AccountsViewProps {
@@ -29,28 +24,23 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
   onOpenAddAccount,
   onEditAccount,
   onOpenTransfer,
-  onOpenQuickIncome,
 }) => {
   const {
     bankAccounts,
     cashWallets,
     deleteBankAccount,
+    setDefaultBankAccount,
     transactions,
-    currentSummary,
   } = useFinance();
 
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Group bank accounts by owner
-  const ansonAccounts = bankAccounts.filter((a) => a.owner === 'Anson');
-  const donaAccounts = bankAccounts.filter((a) => a.owner === 'Dona');
-  const jointAccounts = bankAccounts.filter((a) => a.owner === 'Joint');
-
   const ansonCash = cashWallets.find((w) => w.owner === 'Anson')?.balance || 0;
   const donaCash = cashWallets.find((w) => w.owner === 'Dona')?.balance || 0;
+  const totalBank = bankAccounts.reduce((s, a) => s + a.currentBalance, 0);
+  const totalCash = ansonCash + donaCash;
 
-  // Selected account transactions
   const selectedAccount = bankAccounts.find((a) => a.id === selectedAccountId);
   const accountTransactions = selectedAccountId
     ? transactions.filter(
@@ -59,258 +49,201 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
     : [];
 
   return (
-    <div className="space-y-6 pb-12">
-      
+    <div className="space-y-5 pb-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-            Bank Accounts & Cash Wallets
+          <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+            Bank &amp; Cash Accounts
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Manage personal and joint bank accounts and physical cash in hand
+          <p className="text-xs sm:text-sm text-slate-500 tabular-nums">
+            Total Balance: <strong className="text-slate-900">{formatINR(totalBank + totalCash)}</strong>
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={onOpenTransfer}
-            className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-blue-700 text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+            className="min-h-[42px] px-3.5 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer"
           >
-            <ArrowLeftRight className="w-3.5 h-3.5" />
-            <span>Transfer Funds</span>
+            <ArrowLeftRight className="w-4 h-4 text-blue-600" />
+            <span>Transfer</span>
           </button>
           <button
+            type="button"
             onClick={onOpenAddAccount}
-            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+            className="min-h-[42px] px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4 text-emerald-400" />
-            <span>Add Bank Account</span>
+            <span>Add Bank</span>
           </button>
-        </div>
-      </div>
-
-      {/* Cash In Hand Section */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-            Physical Cash In Hand
-          </h3>
-          <span className="text-xs font-extrabold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-lg border border-teal-200/60">
-            Total Cash: {formatINR(ansonCash + donaCash)}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Anson Cash */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex items-center justify-between">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                <Wallet className="w-6 h-6" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-bold text-slate-900">Anson's Cash Wallet</h4>
-                  <span className="text-[10px] font-extrabold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">
-                    Personal
-                  </span>
-                </div>
-                <p className="text-xl font-black text-slate-900 mt-1">
-                  {formatINR(ansonCash)}
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={onOpenTransfer}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition"
-            >
-              Withdraw / Deposit
-            </button>
-          </div>
-
-          {/* Dona Cash */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex items-center justify-between">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                <Wallet className="w-6 h-6" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-bold text-slate-900">Dona's Cash Wallet</h4>
-                  <span className="text-[10px] font-extrabold bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded">
-                    Personal
-                  </span>
-                </div>
-                <p className="text-xl font-black text-slate-900 mt-1">
-                  {formatINR(donaCash)}
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={onOpenTransfer}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition"
-            >
-              Withdraw / Deposit
-            </button>
-          </div>
         </div>
       </div>
 
       {/* Bank Accounts Section */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-900">
             Bank Accounts ({bankAccounts.length})
           </h3>
-          <span className="text-xs font-extrabold text-blue-800 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200/60">
-            Total Bank Balance: {formatINR(bankAccounts.reduce((s, a) => s + a.currentBalance, 0))}
+          <span className="text-xs font-bold text-slate-600 tabular-nums">
+            {formatINR(totalBank)}
           </span>
         </div>
 
         {bankAccounts.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-8 text-center shadow-xs">
-            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
-              <Building2 className="w-6 h-6" />
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-7 text-center">
+            <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
+              <Building2 className="w-5 h-5" />
             </div>
-            <h4 className="text-sm font-bold text-slate-900 mb-1">No Bank Accounts Added Yet</h4>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto mb-4">
-              Add your personal or joint bank accounts (e.g. SBI, HDFC, ICICI, Federal Bank) to track balances and transactions.
+            <h4 className="text-sm font-bold text-slate-900 mb-1">No Bank Accounts Yet</h4>
+            <p className="text-xs text-slate-500 max-w-xs mx-auto mb-4">
+              Add your bank accounts for Anson, Dona, or Joint to track balances cleanly.
             </p>
             <button
               type="button"
               onClick={onOpenAddAccount}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+              className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition cursor-pointer"
             >
               <Plus className="w-4 h-4 text-emerald-400" />
-              <span>Add Your First Bank Account</span>
+              <span>Add Bank Account</span>
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {bankAccounts.map((acc) => {
-            const isAnson = acc.owner === 'Anson';
-            const isDona = acc.owner === 'Dona';
-            const isJoint = acc.owner === 'Joint';
-            const isSelected = selectedAccountId === acc.id;
-
-            return (
-              <div
-                key={acc.id}
-                onClick={() => setSelectedAccountId(isSelected ? null : acc.id)}
-                className={`bg-white rounded-2xl border p-5 shadow-xs transition-all cursor-pointer relative overflow-hidden group ${
-                  isSelected
-                    ? 'border-blue-600 ring-2 ring-blue-500/20 shadow-md'
-                    : 'border-slate-200/80 hover:border-slate-300'
-                }`}
-              >
-                {/* Top Bar of card */}
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 font-bold">
-                      <Building2 className="w-4 h-4 text-blue-600" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900">{acc.bankName}</h4>
-                      <p className="text-[10px] text-slate-400 font-mono">
-                        {acc.accountNumberMasked || '•••• Bank A/C'}
-                      </p>
+              const isSelected = selectedAccountId === acc.id;
+              return (
+                <div
+                  key={acc.id}
+                  onClick={() => setSelectedAccountId(isSelected ? null : acc.id)}
+                  className={`bg-white rounded-2xl border p-4 transition cursor-pointer ${
+                    isSelected
+                      ? 'border-blue-600 ring-2 ring-blue-500/15'
+                      : 'border-slate-200/90 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                        <Building2 className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-sm font-bold text-slate-900 truncate">{acc.bankName}</h4>
+                          {acc.isDefault && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-extrabold shrink-0">
+                              <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
+                              Default
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 truncate">
+                          {acc.name} · {acc.owner}
+                          {acc.accountNumberMasked ? ` · ${acc.accountNumberMasked}` : ''}
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  <span
-                    className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
-                      isAnson
-                        ? 'bg-blue-50 text-blue-700'
-                        : isDona
-                        ? 'bg-emerald-50 text-emerald-700'
-                        : 'bg-amber-50 text-amber-700'
-                    }`}
-                  >
-                    {acc.owner}
-                  </span>
-                </div>
-
-                <div className="my-3">
-                  <p className="text-[11px] font-medium text-slate-500">{acc.name}</p>
-                  <p className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">
+                  <p className="text-2xl font-extrabold text-slate-900 tracking-tight tabular-nums mb-3">
                     {formatINR(acc.currentBalance)}
                   </p>
-                </div>
 
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                  <span className="text-[11px] text-slate-400">
-                    {isSelected ? 'Click to hide ledger' : 'Click to view ledger'}
-                  </span>
-                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => onEditAccount(acc)}
-                      className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition"
-                      title="Edit Account"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                    {deletingId === acc.id ? (
-                      <div className="flex items-center gap-1 bg-rose-50 p-0.5 rounded-lg border border-rose-200">
-                        <button
-                          onClick={() => {
-                            deleteBankAccount(acc.id);
-                            setDeletingId(null);
-                          }}
-                          className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold transition"
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          onClick={() => setDeletingId(null)}
-                          className="px-1.5 py-0.5 text-slate-500 hover:text-slate-800 text-[10px] font-medium"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ) : (
+                  <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
+                    {!acc.isDefault ? (
                       <button
-                        onClick={() => setDeletingId(acc.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                        title="Delete Account"
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDefaultBankAccount(acc.id);
+                        }}
+                        className="min-h-[34px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-50 text-slate-700 hover:text-amber-800 font-bold text-[11px] inline-flex items-center gap-1 transition cursor-pointer"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Star className="w-3 h-3" />
+                        <span>Set Default</span>
                       </button>
+                    ) : (
+                      <span className="text-slate-400 font-medium">
+                        {isSelected ? 'Hide ledger' : 'Tap for ledger'}
+                      </span>
                     )}
+
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => onEditAccount(acc)}
+                        aria-label="Edit account"
+                        className="min-w-[36px] min-h-[36px] text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg flex items-center justify-center transition cursor-pointer"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+
+                      {deletingId === acc.id ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              deleteBankAccount(acc.id);
+                              setDeletingId(null);
+                            }}
+                            className="min-h-[34px] px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold cursor-pointer"
+                          >
+                            Delete
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingId(null)}
+                            className="min-h-[34px] px-2 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setDeletingId(acc.id)}
+                          aria-label="Delete account"
+                          className="min-w-[36px] min-h-[36px] text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg flex items-center justify-center transition cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
         )}
-      </div>
+      </section>
 
-      {/* Selected Account Transaction History Modal/Card */}
+      {/* Selected Account Ledger */}
       {selectedAccount && (
-        <div className="bg-white rounded-2xl border border-blue-200 p-5 shadow-xs animate-in fade-in">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <section className="bg-white rounded-2xl border border-blue-200 p-4 sm:p-5">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
             <div>
               <h3 className="text-sm font-bold text-slate-900">
-                Ledger for {selectedAccount.bankName} - {selectedAccount.name}
+                {selectedAccount.bankName} — {selectedAccount.name}
               </h3>
               <p className="text-xs text-slate-500">
-                {accountTransactions.length} transactions associated with this account
+                {accountTransactions.length} transactions
               </p>
             </div>
             <button
+              type="button"
               onClick={() => setSelectedAccountId(null)}
-              className="text-xs font-bold text-slate-500 hover:text-slate-900"
+              className="min-h-[36px] px-3 text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer"
             >
-              Close Ledger
+              Close
             </button>
           </div>
 
           {accountTransactions.length === 0 ? (
-            <div className="py-8 text-center text-slate-400 text-xs">
-              No transactions linked directly to this account yet.
-            </div>
+            <p className="py-6 text-center text-slate-400 text-xs">
+              No transactions for this account yet.
+            </p>
           ) : (
             <div className="divide-y divide-slate-100 text-xs">
               {accountTransactions.map((tx) => {
@@ -319,34 +252,75 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
                   <div key={tx.id} className="py-2.5 flex items-center justify-between gap-2.5">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                           isIncoming ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
                         }`}
                       >
-                        <IndianRupee className="w-3.5 h-3.5 stroke-[2.5]" />
+                        <IndianRupee className="w-3.5 h-3.5" />
                       </div>
                       <div className="min-w-0">
                         <p className="font-bold text-slate-800 truncate">{tx.title}</p>
                         <p className="text-[11px] text-slate-400">
-                          {formatDateDDMMYYYY(tx.date)} • By {tx.person}
+                          {formatDateDDMMYYYY(tx.date)} · {tx.person}
                         </p>
                       </div>
                     </div>
                     <span
-                      className={`font-black shrink-0 ${
+                      className={`font-extrabold tabular-nums shrink-0 ${
                         isIncoming ? 'text-emerald-600' : 'text-rose-600'
                       }`}
                     >
-                      {formatINR(tx.amount)}
+                      {isIncoming ? `+${formatINR(tx.amount)}` : `-${formatINR(tx.amount)}`}
                     </span>
                   </div>
                 );
               })}
             </div>
           )}
-        </div>
+        </section>
       )}
 
+      {/* Cash Wallets Section */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-900">Cash in Hand</h3>
+          <span className="text-xs font-bold text-slate-600 tabular-nums">
+            {formatINR(totalCash)}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {[
+            { name: "Anson's Cash", balance: ansonCash, tint: 'bg-blue-50 text-blue-600' },
+            { name: "Dona's Cash", balance: donaCash, tint: 'bg-emerald-50 text-emerald-600' },
+          ].map((wallet) => (
+            <div
+              key={wallet.name}
+              className="bg-white rounded-2xl border border-slate-200/90 p-4 flex items-center justify-between gap-3"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${wallet.tint}`}>
+                  <Wallet className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-500">{wallet.name}</p>
+                  <p className="text-xl font-extrabold text-slate-900 tabular-nums">
+                    {formatINR(wallet.balance)}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={onOpenTransfer}
+                className="min-h-[40px] px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer shrink-0"
+              >
+                Transfer
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { BankAccount } from '../../types/finance';
-import { X, Building2, Check, Plus, IndianRupee } from 'lucide-react';
+import { X, Building2, Check, IndianRupee, Star } from 'lucide-react';
 
 interface AddEditAccountModalProps {
   isOpen: boolean;
@@ -14,7 +14,7 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
   onClose,
   editAccount,
 }) => {
-  const { addBankAccount, editBankAccount, currentUser } = useFinance();
+  const { addBankAccount, editBankAccount, bankAccounts, currentUser } = useFinance();
 
   const [name, setName] = useState<string>('');
   const [bankName, setBankName] = useState<string>('HDFC Bank');
@@ -23,6 +23,7 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
   const [accountNumberMasked, setAccountNumberMasked] = useState<string>('');
   const [owner, setOwner] = useState<'Anson' | 'Dona' | 'Joint'>('Anson');
   const [balance, setBalance] = useState<string>('');
+  const [isDefault, setIsDefault] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
@@ -32,6 +33,7 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
       setAccountNumberMasked(editAccount.accountNumberMasked || '');
       setOwner(editAccount.owner);
       setBalance(String(editAccount.currentBalance));
+      setIsDefault(Boolean(editAccount.isDefault));
       setIsCustomBank(false);
       setCustomBankInput('');
     } else {
@@ -42,9 +44,10 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
       setAccountNumberMasked('');
       setOwner(currentUser);
       setBalance('');
+      setIsDefault(bankAccounts.length === 0);
       setError('');
     }
-  }, [editAccount, isOpen, currentUser]);
+  }, [editAccount, isOpen, currentUser, bankAccounts.length]);
 
   if (!isOpen) return null;
 
@@ -67,6 +70,7 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
         accountNumberMasked: accountNumberMasked.trim() ? accountNumberMasked.trim() : undefined,
         owner,
         currentBalance: numBalance,
+        isDefault,
       });
     } else {
       addBankAccount({
@@ -76,6 +80,7 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
         owner,
         openingBalance: numBalance,
         currentBalance: numBalance,
+        isDefault,
       });
     }
 
@@ -273,6 +278,31 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
               className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
             />
           </div>
+
+          {/* Default Payment Bank Account Toggle */}
+          <label className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100/70 transition">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div
+                className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                  isDefault ? 'bg-amber-100 text-amber-600' : 'bg-white text-slate-400 border border-slate-200'
+                }`}
+              >
+                <Star className={`w-4 h-4 ${isDefault ? 'fill-amber-500 text-amber-500' : ''}`} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-900">Default Bank Account</p>
+                <p className="text-[11px] text-slate-500">
+                  Auto-select for Expense, Income &amp; EMI payments
+                </p>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={isDefault}
+              onChange={(e) => setIsDefault(e.target.checked)}
+              className="w-5 h-5 accent-blue-600 rounded cursor-pointer shrink-0"
+            />
+          </label>
 
           {/* Action buttons: Cancel and Save */}
           <div className="pt-2 flex items-center gap-3">

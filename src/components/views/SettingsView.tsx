@@ -1,7 +1,15 @@
 import React, { useState } from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { ExpenseCategory, Person } from '../../types/finance';
-import { CATEGORY_DETAILS, COLOR_PALETTE_OPTIONS, getCategoryColor } from '../../utils/formatters';
+import { CATEGORY_DETAILS, COLOR_PALETTE_OPTIONS, formatINR, getCategoryColor } from '../../utils/formatters';
+import {
+  getNotificationPermission,
+  isNotificationSupported,
+  playNotificationSound,
+  requestNotificationPermission,
+  showPhoneNotification,
+  unlockNotificationAudio,
+} from '../../utils/notifications';
 import {
   ShieldCheck,
   KeyRound,
@@ -12,11 +20,11 @@ import {
   Lock,
   User,
   AlertTriangle,
-  Info,
   Palette,
   Plus,
-  Tag,
-  RotateCcw,
+  Bell,
+  Clock,
+  Volume2,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -33,13 +41,25 @@ export const SettingsView: React.FC = () => {
     categoryColors,
     setCategoryColor,
     addCustomCategory,
+    notifyPartnerTransactions,
+    setNotifyPartnerTransactions,
+    notifyEmiReminders,
+    setNotifyEmiReminders,
+    notificationSoundEnabled,
+    setNotificationSoundEnabled,
+    pushInAppNotification,
+    loans,
   } = useFinance();
 
   const [ansonPinInput, setAnsonPinInput] = useState<string>('');
   const [donaPinInput, setDonaPinInput] = useState<string>('');
   const [pinSuccessMsg, setPinSuccessMsg] = useState<string>('');
+  const [pinErrorMsg, setPinErrorMsg] = useState<string>('');
   const [importStatus, setImportStatus] = useState<string>('');
   const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(() =>
+    getNotificationPermission()
+  );
 
   // Category Color Customization state
   const [editingCategoryKey, setEditingCategoryKey] = useState<string | null>(null);
@@ -49,9 +69,11 @@ export const SettingsView: React.FC = () => {
 
   const handleUpdatePin = (person: Person, pin: string) => {
     if (pin.length !== 4 || isNaN(Number(pin))) {
-      alert('PIN must be a 4-digit numeric code');
+      setPinErrorMsg('PIN must be a 4-digit numeric code');
+      setTimeout(() => setPinErrorMsg(''), 3000);
       return;
     }
+    setPinErrorMsg('');
     updateUserPin(person, pin);
     setPinSuccessMsg(`PIN for ${person} successfully updated!`);
     setTimeout(() => setPinSuccessMsg(''), 3000);
@@ -99,6 +121,190 @@ export const SettingsView: React.FC = () => {
           <span>{pinSuccessMsg}</span>
         </div>
       )}
+
+      {pinErrorMsg && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold rounded-2xl flex items-center gap-2 animate-in fade-in">
+          <AlertTriangle className="w-4 h-4 text-rose-600" />
+          <span>{pinErrorMsg}</span>
+        </div>
+      )}
+
+      {/* Phone Notifications & EMI Reminders */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <Bell className="w-4 h-4 text-slate-700" />
+            <h3 className="text-sm font-bold text-slate-900">Phone Notifications &amp; EMI Reminders</h3>
+          </div>
+          <span
+            className={`text-[11px] font-bold px-2.5 py-1 rounded-lg self-start sm:self-auto ${
+              notifPermission === 'granted'
+                ? 'bg-emerald-50 text-emerald-700'
+                : notifPermission === 'denied'
+                ? 'bg-rose-50 text-rose-700'
+                : 'bg-amber-50 text-amber-800'
+            }`}
+          >
+            {notifPermission === 'granted'
+              ? 'Phone Alerts Active'
+              : notifPermission === 'denied'
+              ? 'Blocked in Browser Settings'
+              : notifPermission === 'unsupported'
+              ? 'In-App Alerts Only'
+              : 'Permission Not Enabled'}
+          </span>
+        </div>
+
+        {isNotificationSupported() && notifPermission !== 'granted' && (
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <p className="text-xs text-slate-600 leading-relaxed">
+              {notifPermission === 'denied'
+                ? 'Notifications are currently blocked by your phone browser. Enable them in browser Site Settings to receive alerts.'
+                : 'Enable notifications on your phone so you receive alerts whenever your partner adds an item and for upcoming EMIs.'}
+            </p>
+            {notifPermission === 'default' && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const res = await requestNotificationPermission();
+                  setNotifPermission(res);
+                }}
+                className="min-h-[40px] px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shrink-0 transition cursor-pointer"
+              >
+                Enable Phone Alerts
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          {/* Partner Transaction Notification Toggle */}
+          <label className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 cursor-pointer">
+            <div>
+              <p className="text-xs font-bold text-slate-900">
+                Notify when partner adds a transaction
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Sends a notification with the item &amp; amount to the other phone whenever Anson or Dona logs an entry.
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={notifyPartnerTransactions}
+              onChange={(e) => setNotifyPartnerTransactions(e.target.checked)}
+              className="w-5 h-5 accent-slate-900 rounded cursor-pointer shrink-0"
+            />
+          </label>
+
+          {/* EMI Reminder Toggle */}
+          <label className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 cursor-pointer">
+            <div>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs font-bold text-slate-900">
+                  EMI Due Date Reminders (5 days before &amp; due date)
+                </p>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1 flex-wrap">
+                <Clock className="w-3 h-3 text-indigo-600 shrink-0" />
+                <span>Reminds 3 times daily at <strong>6:00 AM</strong>, <strong>12:00 PM</strong> &amp; <strong>10:00 PM</strong> until paid.</span>
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={notifyEmiReminders}
+              onChange={(e) => setNotifyEmiReminders(e.target.checked)}
+              className="w-5 h-5 accent-indigo-600 rounded cursor-pointer shrink-0"
+            />
+          </label>
+          {/* Notification Sound Toggle */}
+          <label className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 cursor-pointer">
+            <div>
+              <div className="flex items-center gap-1.5">
+                <Volume2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <p className="text-xs font-bold text-slate-900">
+                  Play Nice Chime Sound on Notifications
+                </p>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Plays a pleasant harmonic bell sound for partner entries and EMI reminders.
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={notificationSoundEnabled}
+              onChange={(e) => {
+                const enabled = e.target.checked;
+                setNotificationSoundEnabled(enabled);
+                if (enabled) {
+                  void unlockNotificationAudio().then(() => playNotificationSound('system', true));
+                }
+              }}
+              className="w-5 h-5 accent-emerald-600 rounded cursor-pointer shrink-0"
+            />
+          </label>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={async () => {
+              await unlockNotificationAudio();
+              if (notifPermission === 'default') {
+                const res = await requestNotificationPermission();
+                setNotifPermission(res);
+              }
+              await showPhoneNotification({
+                title: `New Expense added by ${currentUser === 'Anson' ? 'Dona' : 'Anson'}`,
+                body: `Groceries — ${formatINR(850)} (Test Alert)`,
+                tag: `test-tx-${Date.now()}`,
+                kind: 'transaction',
+                onInAppNotify: pushInAppNotification,
+              });
+            }}
+            className="min-h-[38px] px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition cursor-pointer"
+          >
+            Test Transaction Alert
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              await unlockNotificationAudio();
+              if (notifPermission === 'default') {
+                const res = await requestNotificationPermission();
+                setNotifPermission(res);
+              }
+              const sampleLoan = loans.find((l) => l.status === 'active');
+              await showPhoneNotification({
+                title: sampleLoan
+                  ? `EMI Reminder (6:00 AM): ${sampleLoan.name}`
+                  : 'EMI Reminder (6:00 AM): Loan Installment',
+                body: sampleLoan
+                  ? `${formatINR(sampleLoan.monthlyEmi)} due on the ${sampleLoan.emiDueDay}th (6:00 AM / 12:00 PM / 10:00 PM schedule).`
+                  : 'Upcoming EMI reminder — reminds 5 days before due date at 6:00 AM, 12:00 PM & 10:00 PM.',
+                tag: `test-emi-${Date.now()}`,
+                kind: 'emi_reminder',
+                onInAppNotify: pushInAppNotification,
+              });
+            }}
+            className="min-h-[38px] px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition cursor-pointer"
+          >
+            Test EMI Reminder
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              await unlockNotificationAudio();
+              await playNotificationSound('emi_reminder', true);
+            }}
+            className="min-h-[38px] px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer"
+          >
+            <Volume2 className="w-3.5 h-3.5" />
+            <span>Test Chime Sound</span>
+          </button>
+        </div>
+      </div>
 
       {/* User Profiles & Active Session */}
       <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">

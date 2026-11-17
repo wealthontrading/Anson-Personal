@@ -13,6 +13,7 @@
         "openingBalance": { "type": "number" },
         "currentBalance": { "type": "number" },
         "colorTheme": { "type": "string" },
+        "isDefault": { "type": "boolean" },
         "createdAt": { "type": "string" }
       },
       "required": ["id", "name", "bankName", "owner", "currentBalance"]
@@ -43,6 +44,11 @@
         "interestRate": { "type": "number" },
         "startDate": { "type": "string" },
         "emiDueDay": { "type": "number" },
+        "emiDueDate": { "type": "string" },
+        "paymentFrequency": { "type": "string", "enum": ["monthly", "quarterly", "yearly"] },
+        "totalInterest": { "type": "number" },
+        "quarterlyInterest": { "type": "number" },
+        "initialPaidAmount": { "type": "number" },
         "tenureMonths": { "type": "number" },
         "emisPaid": { "type": "number" },
         "emisRemaining": { "type": "number" },
@@ -72,7 +78,10 @@
         "notes": { "type": "string" },
         "receiptImage": { "type": "string" },
         "loanId": { "type": "string" },
+        "paymentFrequency": { "type": "string", "enum": ["monthly", "quarterly", "yearly"] },
+        "interestAmount": { "type": "number" },
         "transferType": { "type": "string" },
+        "createdByDevice": { "type": "string" },
         "createdAt": { "type": "string" }
       },
       "required": ["id", "type", "title", "amount", "date", "person"]

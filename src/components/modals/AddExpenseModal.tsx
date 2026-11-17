@@ -15,10 +15,9 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   onClose,
   editTx,
 }) => {
-  const { currentUser, bankAccounts, customCategories, categoryColors, addCustomCategory, addTransaction, editTransaction } = useFinance();
+  const { currentUser, bankAccounts, defaultBankAccount, customCategories, categoryColors, addCustomCategory, addTransaction, editTransaction } = useFinance();
 
   const [amount, setAmount] = useState<string>('');
-  const [title, setTitle] = useState<string>('');
   const [category, setCategory] = useState<string>('food');
   const [paidBy, setPaidBy] = useState<Person>(currentUser);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('bank');
@@ -33,26 +32,39 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   const [newCategoryName, setNewCategoryName] = useState<string>('');
   const [newCategoryColor, setNewCategoryColor] = useState<string>('#f97316');
 
+  // Sort available accounts so default account comes first, then current user & joint accounts
+  const availableAccounts = [...bankAccounts].sort((a, b) => {
+    if (Boolean(a.isDefault) !== Boolean(b.isDefault)) {
+      return a.isDefault ? -1 : 1;
+    }
+    const aMatch = a.owner === currentUser ? -2 : a.owner === 'Joint' ? -1 : 0;
+    const bMatch = b.owner === currentUser ? -2 : b.owner === 'Joint' ? -1 : 0;
+    return aMatch - bMatch;
+  });
+
   // Sync state if editing an existing transaction
   useEffect(() => {
     if (editTx) {
       setAmount(String(editTx.amount));
-      setTitle(editTx.title);
       setCategory(editTx.category || 'food');
       setPaidBy(editTx.person || currentUser);
       setPaymentMethod(editTx.paymentMethod || 'bank');
-      setSelectedAccountId(editTx.fromAccountId || '');
+      setSelectedAccountId(editTx.fromAccountId || defaultBankAccount?.id || '');
       setDate(editTx.date);
       setNotes(editTx.notes || '');
       setReceiptImage(editTx.receiptImage);
+      setError('');
     } else {
       setAmount('');
-      setTitle('');
       setCategory('food');
       setPaidBy(currentUser);
       setPaymentMethod(bankAccounts.length > 0 ? 'bank' : 'cash');
-      const defaultAcc = bankAccounts.find((a) => a.owner === currentUser) || bankAccounts.find((a) => a.owner === 'Joint') || bankAccounts[0];
-      setSelectedAccountId(defaultAcc?.id || '');
+      const fallbackAcc =
+        defaultBankAccount ||
+        bankAccounts.find((a) => a.owner === currentUser) ||
+        bankAccounts.find((a) => a.owner === 'Joint') ||
+        bankAccounts[0];
+      setSelectedAccountId(fallbackAcc?.id || '');
       setDate(getTodayISO());
       setNotes('');
       setReceiptImage(undefined);
@@ -61,23 +73,16 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       setNewCategoryName('');
       setNewCategoryColor('#f97316');
     }
-  }, [editTx, isOpen, currentUser, bankAccounts]);
-
-  if (!isOpen) return null;
-
-  // Sort available accounts so current user & joint accounts appear first, but all accounts remain accessible
-  const availableAccounts = [...bankAccounts].sort((a, b) => {
-    const aMatch = a.owner === currentUser ? -2 : a.owner === 'Joint' ? -1 : 0;
-    const bMatch = b.owner === currentUser ? -2 : b.owner === 'Joint' ? -1 : 0;
-    return aMatch - bMatch;
-  });
+  }, [editTx, isOpen, currentUser, bankAccounts, defaultBankAccount]);
 
   // Ensure an account is always selected when bank accounts exist
   useEffect(() => {
     if ((!selectedAccountId || !availableAccounts.some((a) => a.id === selectedAccountId)) && availableAccounts.length > 0) {
       setSelectedAccountId(availableAccounts[0].id);
     }
-  }, [availableAccounts, selectedAccountId]);
+  }, [bankAccounts, currentUser, selectedAccountId]);
+
+  if (!isOpen) return null;
 
   const handleCreateCategory = (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,24 +115,28 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       setError('Please enter a valid expense amount greater than 0');
       return;
     }
-    if (!title.trim()) {
-      setError('Please provide an expense title (e.g. Groceries)');
-      return;
-    }
     if ((paymentMethod === 'bank' || paymentMethod === 'credit_card') && !selectedAccountId) {
       setError('Please select the payment account used');
       return;
     }
 
+    const categoryLabel =
+      CATEGORY_DETAILS[category as ExpenseCategory]?.label ||
+      customCategories.find((c) => c.name === category)?.name ||
+      category ||
+      'Expense';
+    const derivedTitle = notes.trim() || categoryLabel;
+
     if (editTx) {
+      const targetPerson = editTx.person || currentUser;
       editTransaction(editTx.id, {
         amount: numAmount,
-        title: title.trim(),
+        title: derivedTitle,
         category,
-        person: currentUser,
+        person: targetPerson,
         paymentMethod,
         fromAccountId: paymentMethod !== 'cash' ? selectedAccountId : undefined,
-        fromCashPerson: paymentMethod === 'cash' ? currentUser : undefined,
+        fromCashPerson: paymentMethod === 'cash' ? targetPerson : undefined,
         date,
         notes: notes.trim(),
         receiptImage,
@@ -135,7 +144,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
     } else {
       addTransaction({
         type: 'expense',
-        title: title.trim(),
+        title: derivedTitle,
         amount: numAmount,
         date,
         person: currentUser,
@@ -199,43 +208,27 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Amount & Title */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Expense Amount (₹) *
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-                    <IndianRupee className="w-4 h-4 stroke-[2.5]" />
-                  </span>
-                  <input
-                    type="number"
-                    step="any"
-                    inputMode="decimal"
-                    required
-                    placeholder="0"
-                    value={amount}
-                    onChange={(e) => {
-                      setAmount(e.target.value);
-                      setError('');
-                    }}
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-lg font-extrabold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500 transition [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 no-spinner"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Expense Title *
-                </label>
+            {/* Amount */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                Expense Amount (₹) *
+              </label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <IndianRupee className="w-4 h-4 stroke-[2.5]" />
+                </span>
                 <input
-                  type="text"
+                  type="number"
+                  step="any"
+                  inputMode="decimal"
                   required
-                  placeholder="e.g. Swiggy food delivery"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500 transition"
+                  placeholder="0"
+                  value={amount}
+                  onChange={(e) => {
+                    setAmount(e.target.value);
+                    setError('');
+                  }}
+                  className="w-full pl-9 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xl font-extrabold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500 transition [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 no-spinner"
                 />
               </div>
             </div>
@@ -434,7 +427,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                 >
                   {availableAccounts.map((acc) => (
                     <option key={acc.id} value={acc.id}>
-                      [{acc.owner}] {acc.bankName} - {acc.name} ({acc.accountNumberMasked || 'A/C'}) • Bal: ₹{acc.currentBalance.toLocaleString('en-IN')}
+                      {acc.isDefault ? '★ Default · ' : ''}[{acc.owner}] {acc.bankName} - {acc.name} ({acc.accountNumberMasked || 'A/C'}) • Bal: ₹{acc.currentBalance.toLocaleString('en-IN')}
                     </option>
                   ))}
                 </select>

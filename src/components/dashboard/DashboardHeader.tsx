@@ -1,158 +1,116 @@
 import React from 'react';
 import { useFinance } from '../../context/FinanceContext';
-import { DashboardView, Person } from '../../types/finance';
-import { formatMonthName } from '../../utils/formatters';
-import { Users, User, Calendar, Lock, Plus, Shield, Smartphone, Zap, LogOut } from 'lucide-react';
-import { PWAInstallButton } from '../common/PWAInstallButton';
+import { NavTab } from '../navigation/Sidebar';
+import { Lock, Plus, Settings, LogOut } from 'lucide-react';
 
 interface DashboardHeaderProps {
+  currentTab: NavTab;
+  onSelectTab: (tab: NavTab) => void;
   onOpenQuickAction: () => void;
-  isSimpleMode: boolean;
-  onToggleSimpleMode: () => void;
 }
 
 export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
+  currentTab,
+  onSelectTab,
   onOpenQuickAction,
-  isSimpleMode,
-  onToggleSimpleMode,
 }) => {
-  const {
-    activeDashboard,
-    setActiveDashboard,
-    selectedMonth,
-    setSelectedMonth,
-    currentUser,
-    logoutUser,
-    lockApp,
-    users,
-  } = useFinance();
+  const { currentUser, logoutUser, lockApp } = useFinance();
 
-  const months = ['2026-10', '2026-09', '2026-08', '2026-07', 'all'];
+  const navItems: { id: NavTab; label: string }[] = [
+    { id: 'dashboard', label: 'Home' },
+    { id: 'transactions', label: 'History' },
+    { id: 'accounts', label: 'Accounts' },
+    { id: 'emis', label: 'Loans' },
+    { id: 'reports', label: 'Reports' },
+    { id: 'settings', label: 'Settings' },
+  ];
 
   return (
-    <header className="bg-white border-b border-slate-200/80 sticky top-0 z-30 px-4 sm:px-8 py-3.5 sm:py-4">
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-        
-        {/* Brand & Dashboard Switcher */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-center font-black tracking-tight text-xl shadow-xs">
-              ₹
-            </div>
-            <div>
-              <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-none">
-                Anson & Dona
-              </h1>
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                Family Expense Tracker
-              </span>
-            </div>
-          </div>
+    <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-30 h-14 sm:h-16 px-4 sm:px-6">
+      <div className="max-w-5xl mx-auto h-full flex items-center justify-between gap-4 sm:gap-8">
+        {/* Zone 1: Clean single-line brand wordmark */}
+        <button
+          type="button"
+          onClick={() => onSelectTab('dashboard')}
+          className="flex items-center gap-2.5 whitespace-nowrap shrink-0 cursor-pointer text-left"
+        >
+          <span className="w-8 h-8 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-center font-black text-lg">
+            ₹
+          </span>
+          <span className="text-base sm:text-lg font-extrabold tracking-tight text-slate-900">
+            Anson &amp; Dona
+          </span>
+        </button>
 
-          {/* Dashboard Switcher Tabs */}
-          <div className="flex items-center p-1 bg-slate-100/90 rounded-2xl border border-slate-200/60 shadow-xs">
-            <button
-              onClick={() => setActiveDashboard('Family')}
-              className={`py-1.5 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                activeDashboard === 'Family'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5 text-blue-600" />
-              <span>Family</span>
-            </button>
+        {/* Zone 2: Clean desktop single-line navigation links */}
+        <nav className="hidden md:flex items-center gap-6 text-sm font-semibold">
+          {navItems.map((item) => {
+            const isActive = currentTab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onSelectTab(item.id)}
+                className={`py-1.5 border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  isActive
+                    ? 'border-slate-900 text-slate-900'
+                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
 
-            <button
-              onClick={() => setActiveDashboard('Anson')}
-              className={`py-1.5 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                activeDashboard === 'Anson'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <User className="w-3.5 h-3.5" />
-              <span>Anson</span>
-            </button>
-
-            <button
-              onClick={() => setActiveDashboard('Dona')}
-              className={`py-1.5 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                activeDashboard === 'Dona'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <User className="w-3.5 h-3.5" />
-              <span>Dona</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Right side controls: Month filter, User profile & action */}
-        <div className="flex items-center flex-wrap gap-2.5 sm:gap-3 justify-between md:justify-end">
-          
-          {/* Month Selector */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 font-semibold">
-            <Calendar className="w-3.5 h-3.5 text-slate-500" />
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-800 outline-hidden cursor-pointer"
-            >
-              {months.map((m) => (
-                <option key={m} value={m}>
-                  {m === 'all' ? 'All Time' : formatMonthName(m)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Logged In User Profile & Device Lock */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 rounded-xl p-1">
-            <div
-              className={`text-[11px] font-extrabold py-1 px-2.5 rounded-lg flex items-center gap-1.5 shadow-2xs ${
-                currentUser === 'Anson'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-emerald-600 text-white'
-              }`}
-              title={`Device locked to ${currentUser}`}
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-white/90" />
-              <span>{currentUser}</span>
-            </div>
-
-            <button
-              onClick={logoutUser}
-              className="text-[10px] font-bold text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg hover:bg-slate-200/60 transition flex items-center gap-1"
-              title="Switch to other profile on this device"
-            >
-              <LogOut className="w-3 h-3 text-slate-400" />
-              <span className="hidden sm:inline">Switch</span>
-            </button>
-
-            <button
-              onClick={lockApp}
-              className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200/60 transition"
-              title="Lock with PIN"
-            >
-              <Lock className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* In-app Mobile PWA Install */}
-          <PWAInstallButton compact={true} />
-
-          {/* Primary Quick Action Button */}
+        {/* Zone 3: User indicator + quick actions */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <button
+            type="button"
+            onClick={logoutUser}
+            title={`Signed in as ${currentUser} — tap to switch profile`}
+            className="min-h-[40px] px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-xs font-bold text-slate-800 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition cursor-pointer"
+          >
+            <span
+              className={`w-5 h-5 rounded-lg text-white text-[11px] font-extrabold flex items-center justify-center ${
+                currentUser === 'Anson' ? 'bg-blue-600' : 'bg-emerald-600'
+              }`}
+            >
+              {currentUser[0]}
+            </span>
+            <span>{currentUser}</span>
+            <LogOut className="w-3 h-3 text-slate-400 hidden sm:inline" />
+          </button>
+
+          <button
+            type="button"
+            onClick={lockApp}
+            aria-label="Lock with PIN"
+            title="Lock screen"
+            className="min-w-[40px] min-h-[40px] rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 flex items-center justify-center transition cursor-pointer"
+          >
+            <Lock className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onSelectTab('settings')}
+            aria-label="Settings"
+            title="Settings"
+            className="md:hidden min-w-[40px] min-h-[40px] rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 flex items-center justify-center transition cursor-pointer"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
             onClick={onOpenQuickAction}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-95 text-white text-xs font-bold transition shadow-xs"
+            className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white text-xs font-bold whitespace-nowrap shrink-0 transition cursor-pointer"
           >
             <Plus className="w-4 h-4 text-emerald-400" />
-            <span>Add Action</span>
+            <span>Add Entry</span>
           </button>
         </div>
-
       </div>
     </header>
   );

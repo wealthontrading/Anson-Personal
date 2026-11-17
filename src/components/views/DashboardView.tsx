@@ -1,78 +1,106 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { IncomeExpenseChart } from '../dashboard/IncomeExpenseChart';
 import { CategoryDonutChart } from '../dashboard/CategoryDonutChart';
 import { CategoryBudgetProgressCard } from '../dashboard/CategoryBudgetProgressCard';
-import { MonthlySummaryCard } from '../dashboard/MonthlySummaryCard';
+import { DeleteConfirmModal } from '../common/DeleteConfirmModal';
+import {
+  getLoanFrequency,
+  getLoanScheduledPaymentAmount,
+  getNextDueDateForLoan,
+  getNotificationPermission,
+  isLoanCyclePaid,
+  isNotificationSupported,
+  requestNotificationPermission,
+} from '../../utils/notifications';
 import {
   formatDateDDMMYYYY,
   formatINR,
+  formatMonthName,
   getCategoryColor,
   CATEGORY_DETAILS,
   INCOME_SOURCE_DETAILS,
 } from '../../utils/formatters';
 import {
-  Coins,
-  Receipt,
-  IndianRupee,
-  Building2,
-  Wallet,
-  PiggyBank,
-  Landmark,
   Calendar,
-  AlertCircle,
-  Clock,
-  Sparkles,
+  Landmark,
   ChevronRight,
-  PlusCircle,
   Plus,
-  Target,
+  ArrowUpRight,
+  ArrowDownLeft,
+  ArrowLeftRight,
+  IndianRupee,
+  Wallet,
+  Edit2,
+  Trash2,
+  Bell,
 } from 'lucide-react';
 import { Transaction } from '../../types/finance';
+import { NavTab } from '../navigation/Sidebar';
 
 interface DashboardViewProps {
   onOpenQuickAction: () => void;
   onOpenActionType: (action: 'income' | 'expense' | 'transfer' | 'emi') => void;
   onOpenBudgetModal: () => void;
-  onSelectTab: (tab: any) => void;
+  onSelectTab: (tab: NavTab) => void;
   onViewReceipt: (imgUrl: string, title: string) => void;
+  onEditTransaction: (tx: Transaction) => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
-  onOpenQuickAction,
   onOpenActionType,
   onOpenBudgetModal,
   onSelectTab,
   onViewReceipt,
+  onEditTransaction,
 }) => {
   const {
     activeDashboard,
     setActiveDashboard,
     currentSummary,
-    familySummary,
-    ansonSummary,
-    donaSummary,
     transactions,
     selectedMonth,
+    setSelectedMonth,
     loans,
-    bankAccounts,
-    cashWallets,
     categoryColors,
+    deleteTransaction,
   } = useFinance();
 
-  // Filter transactions for recent activity
+  const [deleteTargetTx, setDeleteTargetTx] = useState<Transaction | null>(null);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(() =>
+    getNotificationPermission()
+  );
+  const [dismissedNotifPrompt, setDismissedNotifPrompt] = useState<boolean>(false);
+
+  // Build dynamic month options including current month and any months in stored transactions
+  const monthOptions = useMemo(() => {
+    const set = new Set<string>();
+    const now = new Date();
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      set.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+    transactions.forEach((tx) => {
+      if (tx.date && tx.date.length >= 7) {
+        set.add(tx.date.slice(0, 7));
+      }
+    });
+    if (selectedMonth !== 'all') set.add(selectedMonth);
+    return [...Array.from(set).sort().reverse(), 'all'];
+  }, [transactions, selectedMonth]);
+
+  // Filter transactions for active dashboard scope
   const relevantTransactions = transactions.filter((tx) => {
     if (activeDashboard === 'Anson') return tx.person === 'Anson';
     if (activeDashboard === 'Dona') return tx.person === 'Dona';
-    return true; // Family includes all
+    return true;
   });
 
-  const recentTransactions = relevantTransactions.slice(0, 6);
+  const recentTransactions = relevantTransactions.slice(0, 5);
 
-  // Upcoming EMIs check
+  // Upcoming EMIs & Gold Loans check (frequency-aware across all accounts)
   const today = new Date();
-  const currentDay = today.getDate();
-  const currentMonthYear = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
   const upcomingEmis = loans
     .filter((l) => {
@@ -81,506 +109,410 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       if (activeDashboard === 'Dona' && l.owner !== 'Dona') return false;
       return true;
     })
-    .map((l) => {
-      // Check if already paid this month
-      const isPaidThisMonth = transactions.some(
-        (tx) => tx.type === 'emi_payment' && tx.loanId === l.id && tx.date.startsWith(currentMonthYear)
-      );
-      const isOverdue = !isPaidThisMonth && currentDay > l.emiDueDay;
-      const isDueSoon = !isPaidThisMonth && l.emiDueDay >= currentDay && l.emiDueDay - currentDay <= 7;
-      return {
-        ...l,
-        isPaidThisMonth,
-        isOverdue,
-        isDueSoon,
-        daysUntilDue: l.emiDueDay - currentDay,
-      };
+    .filter((l) => {
+      const freq = getLoanFrequency(l);
+      const nextDue = getNextDueDateForLoan(l, transactions, today);
+      const isPaid = isLoanCyclePaid(l, nextDue, transactions, freq);
+      if (isPaid) return false;
+      const diffDays = Math.round((nextDue.getTime() - todayMidnight.getTime()) / 86400000);
+      return diffDays <= 15 || nextDue.getMonth() === today.getMonth();
     });
 
-  const getSubtitle = () => {
-    if (activeDashboard === 'Anson') {
-      return "Anson's personal cash flows, salary, EMIs, and savings";
-    }
-    if (activeDashboard === 'Dona') {
-      return "Dona's personal cash flows, salary, EMIs, and savings";
-    }
-    return 'Combined financial health and household cash flows';
-  };
+  const spentPercent =
+    currentSummary.totalIncome > 0
+      ? Math.min(100, Math.round((currentSummary.totalExpenses / currentSummary.totalIncome) * 100))
+      : 0;
 
   return (
-    <div className="space-y-6 pb-12">
-      
-      {/* Top Banner & Title */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span
-              className={`w-3 h-3 rounded-full ${
-                activeDashboard === 'Anson'
-                  ? 'bg-blue-600'
-                  : activeDashboard === 'Dona'
-                  ? 'bg-emerald-600'
-                  : 'bg-slate-900'
-              }`}
-            />
-            <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              {activeDashboard === 'Family' ? 'Family Financial Overview' : `${activeDashboard}'s Personal Dashboard`}
-            </h2>
-          </div>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            {getSubtitle()}
-          </p>
+    <div className="space-y-5 pb-6">
+      {/* Row 1: Simple Who & Month Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {/* Person / Family Switcher */}
+        <div className="grid grid-cols-3 sm:inline-flex p-1 bg-slate-200/70 rounded-2xl">
+          {(['Family', 'Anson', 'Dona'] as const).map((view) => {
+            const isActive = activeDashboard === view;
+            return (
+              <button
+                key={view}
+                type="button"
+                onClick={() => setActiveDashboard(view)}
+                className={`min-h-[40px] px-4 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap ${
+                  isActive
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {view}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Quick Action Shortcut Pills without arrows */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => onOpenActionType('income')}
-            className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100/80 text-emerald-700 border border-emerald-200 text-xs font-bold transition flex items-center gap-1.5"
-          >
-            <Plus className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Add Income</span>
-          </button>
-          <button
-            onClick={() => onOpenActionType('expense')}
-            className="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100/80 text-rose-700 border border-rose-200 text-xs font-bold transition flex items-center gap-1.5"
-          >
-            <Plus className="w-3.5 h-3.5 text-rose-600" />
-            <span>Add Expense</span>
-          </button>
-          <button
-            onClick={() => onOpenActionType('transfer')}
-            className="px-3.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100/80 text-blue-700 border border-blue-200 text-xs font-bold transition flex items-center gap-1.5"
-          >
-            <Building2 className="w-3.5 h-3.5 text-blue-600" />
-            <span>Transfer</span>
-          </button>
-          <button
-            onClick={onOpenBudgetModal}
-            className="px-3.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100/80 text-indigo-700 border border-indigo-200 text-xs font-bold transition flex items-center gap-1.5"
-          >
-            <Target className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Set Budgets</span>
-          </button>
+        {/* Month Picker */}
+        <div className="flex items-center justify-between sm:justify-end gap-2">
+          <div className="flex items-center gap-2 bg-white border border-slate-200/90 rounded-xl px-3 min-h-[42px] text-xs font-bold text-slate-800 w-full sm:w-auto">
+            <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+            <select
+              aria-label="Select month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="bg-transparent text-xs sm:text-sm font-bold text-slate-800 outline-hidden cursor-pointer w-full py-1.5"
+            >
+              {monthOptions.map((m) => (
+                <option key={m} value={m}>
+                  {m === 'all' ? 'All Time' : formatMonthName(m)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
-      {/* Upcoming EMI Notification Banner if any */}
-      {upcomingEmis.some((e) => !e.isPaidThisMonth) && (
-        <div className="p-4 rounded-2xl bg-indigo-50/80 border border-indigo-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-              <Landmark className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="text-xs sm:text-sm font-bold text-indigo-950">
-                  Upcoming Loan EMI Installment
-                </h4>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-200 text-indigo-800">
-                  Due this month
-                </span>
-              </div>
-              <p className="text-xs text-indigo-800 mt-0.5">
-                {upcomingEmis
-                  .filter((e) => !e.isPaidThisMonth)
-                  .map((e) => `${e.name} (${formatINR(e.monthlyEmi)} on ${e.emiDueDay}th)`)
-                  .join(' • ')}
-              </p>
+      {/* Row 2: Single Unified Balance & Monthly Summary Card */}
+      <section className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-5 border-b border-slate-100">
+          <div>
+            <p className="text-xs font-semibold text-slate-500">
+              {activeDashboard === 'Family' ? 'Total Family Balance' : `${activeDashboard}'s Balance`}
+            </p>
+            <p className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight mt-1 tabular-nums">
+              {formatINR(currentSummary.totalLiquidWealth)}
+            </p>
+            <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 mt-2 tabular-nums">
+              <span>Bank: <strong className="text-slate-700">{formatINR(currentSummary.bankBalance)}</strong></span>
+              <span aria-hidden="true">·</span>
+              <span>Cash: <strong className="text-slate-700">{formatINR(currentSummary.cashInHand)}</strong></span>
+              {currentSummary.totalOutstandingLoans > 0 && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>Loans: <strong className="text-slate-700">{formatINR(currentSummary.totalOutstandingLoans)}</strong></span>
+                </>
+              )}
             </div>
           </div>
+
           <button
-            onClick={() => onOpenActionType('emi')}
-            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition self-start sm:self-auto shrink-0"
+            type="button"
+            onClick={() => onSelectTab('accounts')}
+            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-xs font-bold text-slate-700 inline-flex items-center gap-1.5 self-start transition cursor-pointer"
           >
-            Pay EMI Now
+            <Wallet className="w-3.5 h-3.5 text-slate-500" />
+            <span>Accounts</span>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
           </button>
         </div>
-      )}
 
-      {/* Real-time Stored Transactions Monthly Summary Card */}
-      <MonthlySummaryCard />
-
-      {/* Primary KPI Metric Cards Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
-        
-        {/* Total Income */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Total Income
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <IndianRupee className="w-4 h-4 stroke-[2.5]" />
-            </div>
-          </div>
+        {/* Clean 3-column Monthly Summary */}
+        <div className="grid grid-cols-3 gap-3 pt-4 tabular-nums">
           <div>
-            <p className="text-lg sm:text-xl font-black text-emerald-600 tracking-tight">
+            <p className="text-[11px] sm:text-xs font-semibold text-slate-500">Income</p>
+            <p className="text-base sm:text-xl font-extrabold text-emerald-600 mt-0.5 truncate">
               {formatINR(currentSummary.totalIncome)}
             </p>
-            <p className="text-[10px] text-slate-400 mt-0.5">
-              Monthly inflow
-            </p>
-          </div>
-        </div>
-
-        {/* Total Expenses / Outflows */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Total Expenses
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
-              <IndianRupee className="w-4 h-4 stroke-[2.5]" />
-            </div>
           </div>
           <div>
-            <p className="text-lg sm:text-xl font-black text-rose-600 tracking-tight">
+            <p className="text-[11px] sm:text-xs font-semibold text-slate-500">Spent</p>
+            <p className="text-base sm:text-xl font-extrabold text-rose-600 mt-0.5 truncate">
               {formatINR(currentSummary.totalExpenses)}
             </p>
-            <p className="text-[10px] text-slate-400 mt-0.5">
-              Incl. EMI & bills
-            </p>
-          </div>
-        </div>
-
-        {/* Monthly Savings & % */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Net Savings
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
-              <PiggyBank className="w-4 h-4" />
-            </div>
           </div>
           <div>
-            <p className={`text-lg sm:text-xl font-black tracking-tight ${
-              currentSummary.netSavings >= 0 ? 'text-slate-900' : 'text-rose-600'
-            }`}>
+            <p className="text-[11px] sm:text-xs font-semibold text-slate-500">Saved</p>
+            <p
+              className={`text-base sm:text-xl font-extrabold mt-0.5 truncate ${
+                currentSummary.netSavings >= 0 ? 'text-slate-900' : 'text-rose-600'
+              }`}
+            >
               {formatINR(currentSummary.netSavings)}
             </p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded">
-                {currentSummary.savingsRate}% saved
-              </span>
-            </div>
           </div>
         </div>
 
-        {/* Bank Account Balances */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Bank Balance
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <Building2 className="w-4 h-4" />
+        {currentSummary.totalIncome > 0 && (
+          <div className="mt-4 pt-3 border-t border-slate-100">
+            <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1.5 tabular-nums">
+              <span>{spentPercent}% of income spent</span>
+              <span className="font-semibold text-emerald-700">{currentSummary.savingsRate}% saved</span>
+            </div>
+            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${
+                  spentPercent > 90 ? 'bg-rose-500' : 'bg-slate-900'
+                }`}
+                style={{ width: `${spentPercent}%` }}
+              />
             </div>
           </div>
-          <div>
-            <p className="text-lg sm:text-xl font-black text-blue-600 tracking-tight">
-              {formatINR(currentSummary.bankBalance)}
-            </p>
-            <p className="text-[10px] text-slate-400 mt-0.5">
-              In savings & salary accounts
-            </p>
-          </div>
-        </div>
+        )}
+      </section>
 
-        {/* Cash in Hand */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Cash in Hand
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center">
-              <Wallet className="w-4 h-4" />
+      {/* Row 3: 4 Thumb-Friendly Quick Actions */}
+      <section className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+        <button
+          type="button"
+          onClick={() => onOpenActionType('expense')}
+          className="min-h-[64px] p-3.5 rounded-2xl bg-white hover:bg-rose-50/50 border border-slate-200/90 flex items-center gap-3 text-left transition active:scale-[0.98] cursor-pointer"
+        >
+          <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+            <ArrowUpRight className="w-5 h-5" />
+          </div>
+          <span className="text-xs sm:text-sm font-bold text-slate-900">Add Expense</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onOpenActionType('income')}
+          className="min-h-[64px] p-3.5 rounded-2xl bg-white hover:bg-emerald-50/50 border border-slate-200/90 flex items-center gap-3 text-left transition active:scale-[0.98] cursor-pointer"
+        >
+          <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+            <ArrowDownLeft className="w-5 h-5" />
+          </div>
+          <span className="text-xs sm:text-sm font-bold text-slate-900">Add Income</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onOpenActionType('transfer')}
+          className="min-h-[64px] p-3.5 rounded-2xl bg-white hover:bg-blue-50/50 border border-slate-200/90 flex items-center gap-3 text-left transition active:scale-[0.98] cursor-pointer"
+        >
+          <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+            <ArrowLeftRight className="w-5 h-5" />
+          </div>
+          <span className="text-xs sm:text-sm font-bold text-slate-900">Transfer</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onOpenActionType('emi')}
+          className="min-h-[64px] p-3.5 rounded-2xl bg-white hover:bg-indigo-50/50 border border-slate-200/90 flex items-center gap-3 text-left transition active:scale-[0.98] cursor-pointer"
+        >
+          <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+            <Landmark className="w-5 h-5" />
+          </div>
+          <span className="text-xs sm:text-sm font-bold text-slate-900">Pay EMI</span>
+        </button>
+      </section>
+
+      {/* Row 4: Phone Notification Opt-In Prompt (only when permission not yet granted) */}
+      {isNotificationSupported() && notifPermission === 'default' && !dismissedNotifPrompt && (
+        <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
+              <Bell className="w-4 h-4" />
             </div>
-          </div>
-          <div>
-            <p className="text-lg sm:text-xl font-black text-teal-700 tracking-tight">
-              {formatINR(currentSummary.cashInHand)}
-            </p>
-            <p className="text-[10px] text-slate-400 mt-0.5">
-              Physical wallet cash
-            </p>
-          </div>
-        </div>
-
-        {/* Outstanding Loan Principal */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Outstanding EMI
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-              <Landmark className="w-4 h-4" />
-            </div>
-          </div>
-          <div>
-            <p className="text-lg sm:text-xl font-black text-indigo-700 tracking-tight">
-              {formatINR(currentSummary.totalOutstandingLoans)}
-            </p>
-            <p className="text-[10px] text-slate-400 mt-0.5">
-              {formatINR(currentSummary.monthlyEmiCommitment)}/mo commitment
-            </p>
-          </div>
-        </div>
-
-      </div>
-
-      {/* Monthly Category Budgets & Spending Limits Progress */}
-      <CategoryBudgetProgressCard
-        onOpenBudgetModal={onOpenBudgetModal}
-        transactions={relevantTransactions}
-      />
-
-      {/* Visual Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <IncomeExpenseChart
-          transactions={relevantTransactions}
-          currentMonth={selectedMonth}
-        />
-        <CategoryDonutChart
-          transactions={relevantTransactions}
-          selectedMonth={selectedMonth}
-        />
-      </div>
-
-      {/* Combined Financial Summary of Anson and Dona (shown prominently on Family dashboard) */}
-      {activeDashboard === 'Family' && (
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 tracking-tight">
-                Anson & Dona Financial Contribution Matrix
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Head-to-head comparison of earnings, spending, and liquid assets
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm font-bold text-amber-950">
+                Turn on Phone Alerts
+              </p>
+              <p className="text-xs text-amber-800">
+                Get instant alerts when your partner adds a transaction &amp; EMI reminders (6 AM, 12 PM, 10 PM).
               </p>
             </div>
-            <button
-              onClick={() => onSelectTab('reports')}
-              className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
-            >
-              <span>Full Analytics</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Anson Column */}
-            <div className="p-4 rounded-2xl bg-blue-50/40 border border-blue-100 flex flex-col justify-between">
-              <div className="flex items-center justify-between pb-3 border-b border-blue-100 mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-blue-600" />
-                  <h4 className="text-sm font-bold text-slate-900">Anson</h4>
-                </div>
-                <span className="text-xs font-bold text-blue-700 bg-white px-2 py-0.5 rounded-lg border border-blue-200">
-                  {ansonSummary.totalIncome > 0 && familySummary.totalIncome > 0
-                    ? `${Math.round((ansonSummary.totalIncome / familySummary.totalIncome) * 100)}% of Family Income`
-                    : 'Partner'}
-                </span>
-              </div>
-
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between py-1 border-b border-blue-50">
-                  <span className="text-slate-600">Monthly Income:</span>
-                  <strong className="text-emerald-700">{formatINR(ansonSummary.totalIncome)}</strong>
-                </div>
-                <div className="flex justify-between py-1 border-b border-blue-50">
-                  <span className="text-slate-600">Monthly Expenses & EMI:</span>
-                  <strong className="text-rose-700">{formatINR(ansonSummary.totalExpenses)}</strong>
-                </div>
-                <div className="flex justify-between py-1 border-b border-blue-50">
-                  <span className="text-slate-600">Bank & Cash Liquidity:</span>
-                  <strong className="text-blue-700">{formatINR(ansonSummary.totalLiquidWealth)}</strong>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-slate-600">Outstanding Loans:</span>
-                  <strong className="text-indigo-700">{formatINR(ansonSummary.totalOutstandingLoans)}</strong>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setActiveDashboard('Anson')}
-                className="mt-4 w-full py-2 bg-white hover:bg-blue-600 hover:text-white text-blue-700 font-bold text-xs rounded-xl border border-blue-200 transition"
-              >
-                Switch to Anson's Dashboard
-              </button>
-            </div>
-
-            {/* Dona Column */}
-            <div className="p-4 rounded-2xl bg-emerald-50/40 border border-emerald-100 flex flex-col justify-between">
-              <div className="flex items-center justify-between pb-3 border-b border-emerald-100 mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-emerald-600" />
-                  <h4 className="text-sm font-bold text-slate-900">Dona</h4>
-                </div>
-                <span className="text-xs font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-lg border border-emerald-200">
-                  {donaSummary.totalIncome > 0 && familySummary.totalIncome > 0
-                    ? `${Math.round((donaSummary.totalIncome / familySummary.totalIncome) * 100)}% of Family Income`
-                    : 'Partner'}
-                </span>
-              </div>
-
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between py-1 border-b border-emerald-50">
-                  <span className="text-slate-600">Monthly Income:</span>
-                  <strong className="text-emerald-700">{formatINR(donaSummary.totalIncome)}</strong>
-                </div>
-                <div className="flex justify-between py-1 border-b border-emerald-50">
-                  <span className="text-slate-600">Monthly Expenses & EMI:</span>
-                  <strong className="text-rose-700">{formatINR(donaSummary.totalExpenses)}</strong>
-                </div>
-                <div className="flex justify-between py-1 border-b border-emerald-50">
-                  <span className="text-slate-600">Bank & Cash Liquidity:</span>
-                  <strong className="text-blue-700">{formatINR(donaSummary.totalLiquidWealth)}</strong>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-slate-600">Outstanding Loans:</span>
-                  <strong className="text-indigo-700">{formatINR(donaSummary.totalOutstandingLoans)}</strong>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setActiveDashboard('Dona')}
-                className="mt-4 w-full py-2 bg-white hover:bg-emerald-600 hover:text-white text-emerald-700 font-bold text-xs rounded-xl border border-emerald-200 transition"
-              >
-                Switch to Dona's Dashboard
-              </button>
-            </div>
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+            <button
+              type="button"
+              onClick={() => setDismissedNotifPrompt(true)}
+              className="min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold text-amber-800 hover:bg-amber-100 transition cursor-pointer"
+            >
+              Later
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const res = await requestNotificationPermission();
+                setNotifPermission(res);
+              }}
+              className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition cursor-pointer"
+            >
+              Enable Alerts
+            </button>
           </div>
         </div>
       )}
 
-      {/* Recent Transactions List */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-sm font-bold text-slate-900 tracking-tight">
-              Recent Transactions
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Latest financial activity for {activeDashboard}
-            </p>
+      {/* Row 4b: Upcoming EMI Alert (only when due) */}
+      {upcomingEmis.length > 0 && (
+        <div className="p-4 rounded-2xl bg-indigo-50/90 border border-indigo-200/80 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+              <Landmark className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm font-bold text-indigo-950">
+                EMI Due This Month
+              </p>
+              <p className="text-xs text-indigo-800 truncate tabular-nums">
+                {upcomingEmis.map((e) => `${e.name} (${formatINR(getLoanScheduledPaymentAmount(e))})`).join(' · ')}
+              </p>
+            </div>
           </div>
           <button
-            onClick={() => onSelectTab('transactions')}
-            className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+            type="button"
+            onClick={() => onOpenActionType('emi')}
+            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shrink-0 transition cursor-pointer"
           >
-            <span>View All ({relevantTransactions.length})</span>
+            Pay Now
+          </button>
+        </div>
+      )}
+
+      {/* Row 5: Recent Activity (Clean Mobile Tap Rows) */}
+      <section className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm sm:text-base font-bold text-slate-900">
+            Recent Transactions
+          </h3>
+          <button
+            type="button"
+            onClick={() => onSelectTab('transactions')}
+            className="min-h-[36px] text-xs font-bold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 cursor-pointer"
+          >
+            <span>See all ({relevantTransactions.length})</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {recentTransactions.length === 0 ? (
-          <div className="py-12 text-center text-slate-500 text-xs flex flex-col items-center justify-center">
-            <div className="w-10 h-10 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mb-2">
-              <IndianRupee className="w-5 h-5 stroke-[2]" />
+          <div className="py-10 text-center">
+            <div className="w-11 h-11 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2.5">
+              <IndianRupee className="w-5 h-5" />
             </div>
-            <p className="font-bold text-slate-800 text-sm">No transactions yet</p>
-            <p className="text-slate-400 mt-1">Ready for your real data. Tap "Add Income" or "Add Expense" above to get started.</p>
+            <p className="text-sm font-bold text-slate-800">No transactions yet</p>
+            <p className="text-xs text-slate-500 mt-1 mb-4">
+              Tap Add Expense or Add Income above to record your first entry.
+            </p>
+            <button
+              type="button"
+              onClick={() => onOpenActionType('expense')}
+              className="min-h-[42px] px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add First Expense</span>
+            </button>
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
             {recentTransactions.map((tx) => {
               const isIncome = tx.type === 'income';
-              const isEmi = tx.type === 'emi_payment';
               const isTransfer = tx.type === 'transfer';
+              const catLabel =
+                CATEGORY_DETAILS[tx.category as keyof typeof CATEGORY_DETAILS]?.label ||
+                INCOME_SOURCE_DETAILS[tx.category as keyof typeof INCOME_SOURCE_DETAILS]?.label ||
+                tx.category ||
+                (tx.paymentMethod === 'cash' ? 'Cash' : 'Bank');
 
               return (
                 <div
                   key={tx.id}
-                  className="py-3 flex items-center justify-between gap-3 hover:bg-slate-50/60 px-2 rounded-xl transition"
+                  onClick={() => onEditTransaction(tx)}
+                  className="min-h-[58px] py-3 px-1.5 flex items-center justify-between gap-2.5 rounded-xl hover:bg-slate-50 cursor-pointer transition"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                        isIncome
-                          ? 'bg-emerald-50 text-emerald-600'
-                          : isEmi
-                          ? 'bg-indigo-50 text-indigo-600'
-                          : isTransfer
-                          ? 'bg-blue-50 text-blue-600'
-                          : 'bg-rose-50 text-rose-600'
-                      }`}
+                      className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 border border-slate-200/70 bg-slate-50"
                     >
-                      {isIncome ? (
-                        <IndianRupee className="w-4 h-4 stroke-[2.5]" />
-                      ) : isTransfer ? (
-                        <Building2 className="w-4 h-4" />
-                      ) : isEmi ? (
-                        <Landmark className="w-4 h-4" />
-                      ) : (
-                        <IndianRupee className="w-4 h-4 stroke-[2.5]" />
-                      )}
+                      <span
+                        className="w-3 h-3 rounded-full"
+                        style={{
+                          backgroundColor: isIncome
+                            ? '#10b981'
+                            : isTransfer
+                            ? '#3b82f6'
+                            : getCategoryColor(tx.category, categoryColors),
+                        }}
+                      />
                     </div>
 
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">
-                          {tx.title}
-                        </p>
-                        <span
-                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                            tx.person === 'Anson'
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'bg-emerald-50 text-emerald-700'
-                          }`}
-                        >
-                          {tx.person}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                        <span>{formatDateDDMMYYYY(tx.date)}</span>
-                        <span>•</span>
-                        <span className="inline-flex items-center gap-1">
-                          <span
-                            className="w-1.5 h-1.5 rounded-full shrink-0"
-                            style={{ backgroundColor: getCategoryColor(tx.category, categoryColors) }}
-                          />
-                          <span className="text-slate-600 font-medium capitalize">
-                            {CATEGORY_DETAILS[tx.category as keyof typeof CATEGORY_DETAILS]?.label ||
-                              INCOME_SOURCE_DETAILS[tx.category as keyof typeof INCOME_SOURCE_DETAILS]?.label ||
-                              tx.category ||
-                              (tx.paymentMethod === 'cash' ? 'Cash' : 'Bank')}
-                          </span>
-                        </span>
-                        {tx.notes ? <span>• {tx.notes}</span> : null}
+                      <p className="text-sm font-bold text-slate-900 truncate">
+                        {tx.title}
+                      </p>
+                      <p className="text-xs text-slate-500 truncate">
+                        {formatDateDDMMYYYY(tx.date)} · {catLabel} · {tx.person}
                       </p>
                     </div>
                   </div>
 
-                  <div className="text-right shrink-0">
-                    <p
-                      className={`text-xs sm:text-sm font-extrabold ${
-                        isIncome
-                          ? 'text-emerald-600'
-                          : isTransfer
-                          ? 'text-blue-600'
-                          : 'text-rose-600'
-                      }`}
-                    >
-                      {formatINR(tx.amount)}
-                    </p>
-                    {tx.receiptImage && (
-                      <button
-                        onClick={() => onViewReceipt(tx.receiptImage!, tx.title)}
-                        className="text-[10px] font-bold text-indigo-600 hover:underline"
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="text-right">
+                      <p
+                        className={`text-sm font-extrabold tabular-nums ${
+                          isIncome
+                            ? 'text-emerald-600'
+                            : isTransfer
+                            ? 'text-blue-600'
+                            : 'text-slate-900'
+                        }`}
                       >
-                        Receipt
+                        {isIncome ? `+${formatINR(tx.amount)}` : formatINR(tx.amount)}
+                      </p>
+                      {tx.receiptImage && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onViewReceipt(tx.receiptImage!, tx.title);
+                          }}
+                          className="text-[11px] font-semibold text-blue-600 hover:underline"
+                        >
+                          Receipt
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => onEditTransaction(tx)}
+                        aria-label="Edit transaction"
+                        className="min-w-[34px] min-h-[34px] rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-200/60 flex items-center justify-center transition cursor-pointer"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
                       </button>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTargetTx(tx)}
+                        aria-label="Delete transaction"
+                        className="min-w-[34px] min-h-[34px] rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
         )}
+      </section>
+
+      {/* Row 6: Monthly Budgets */}
+      <CategoryBudgetProgressCard
+        onOpenBudgetModal={onOpenBudgetModal}
+        transactions={relevantTransactions}
+      />
+
+      {/* Row 7: Spending Breakdown & Trend */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <CategoryDonutChart
+          transactions={relevantTransactions}
+          selectedMonth={selectedMonth}
+        />
+        <IncomeExpenseChart
+          transactions={relevantTransactions}
+          currentMonth={selectedMonth}
+        />
       </div>
 
+      <DeleteConfirmModal
+        transaction={deleteTargetTx}
+        onCancelNo={() => setDeleteTargetTx(null)}
+        onConfirmYes={(tx) => {
+          deleteTransaction(tx.id);
+          setDeleteTargetTx(null);
+        }}
+      />
     </div>
   );
 };

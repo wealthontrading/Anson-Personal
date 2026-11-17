@@ -47,6 +47,7 @@ export interface BankAccount {
   openingBalance: number;
   currentBalance: number;
   colorTheme?: string;
+  isDefault?: boolean;
   createdAt: string;
 }
 
@@ -61,8 +62,10 @@ export type LoanType =
   | 'car_loan' 
   | 'personal_loan' 
   | 'gold_loan' 
-  | 'education_loan'
+  | 'education_loan' 
   | 'other';
+
+export type PaymentFrequency = 'monthly' | 'quarterly' | 'yearly';
 
 export interface Loan {
   id: string;
@@ -75,6 +78,11 @@ export interface Loan {
   interestRate: number; // in %
   startDate: string; // YYYY-MM-DD
   emiDueDay: number; // 1 - 31
+  emiDueDate?: string; // YYYY-MM-DD exact due date for auto reminder calculation
+  paymentFrequency?: PaymentFrequency; // monthly | quarterly | yearly
+  totalInterest?: number; // Total / annual interest for gold loan or total loan interest
+  quarterlyInterest?: number; // Quarterly interest amount for gold loan
+  initialPaidAmount?: number; // Pre-existing amount paid before app tracking
   tenureMonths: number;
   emisPaid: number;
   emisRemaining: number;
@@ -113,7 +121,10 @@ export interface Transaction {
   notes?: string;
   receiptImage?: string; // data URL
   loanId?: string; // If related to EMI payment
+  paymentFrequency?: PaymentFrequency; // Monthly, quarterly, or yearly EMI payment option
+  interestAmount?: number; // Interest portion paid in an EMI / Gold Loan payment
   transferType?: TransferType;
+  createdByDevice?: string;
   createdAt: string;
 }
 

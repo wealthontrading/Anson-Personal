@@ -24,6 +24,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { PWAInstallButton } from '../common/PWAInstallButton';
+import { DeleteConfirmModal } from '../common/DeleteConfirmModal';
 
 interface SimpleMobileViewProps {
   onSwitchToFullView: () => void;
@@ -35,7 +36,6 @@ interface SimpleMobileViewProps {
 
 export const SimpleMobileView: React.FC<SimpleMobileViewProps> = ({
   onSwitchToFullView,
-  onOpenQuickAction,
   onOpenIncome,
   onOpenTransfer,
   onOpenEmi,
@@ -45,6 +45,7 @@ export const SimpleMobileView: React.FC<SimpleMobileViewProps> = ({
     switchUser,
     cashWallets,
     bankAccounts,
+    defaultBankAccount,
     transactions,
     customCategories,
     categoryColors,
@@ -63,6 +64,7 @@ export const SimpleMobileView: React.FC<SimpleMobileViewProps> = ({
   );
   const [quickTitle, setQuickTitle] = useState<string>('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [deleteTargetTx, setDeleteTargetTx] = useState<Transaction | null>(null);
 
   // Quick categories for 1-tap selection on mobile
   const quickCategories: { id: ExpenseCategory; label: string; icon: any; color: string }[] = [
@@ -124,12 +126,12 @@ export const SimpleMobileView: React.FC<SimpleMobileViewProps> = ({
       return;
     }
 
-    if (paymentMethod === 'bank' && currentBankAccounts.length === 0) {
-      alert(`No bank account found for ${currentUser}. Please add an account in the Accounts tab or choose "Cash in Hand".`);
+    if (paymentMethod === 'bank' && bankAccounts.length === 0) {
+      alert(`No bank account found. Please add an account in the Accounts tab or choose "Cash in Hand".`);
       return;
     }
 
-    const defaultAccount = currentBankAccounts[0]?.id;
+    const chosenAccount = defaultBankAccount?.id || currentBankAccounts[0]?.id || bankAccounts[0]?.id;
     const catLabel = (CATEGORY_DETAILS as Record<string, { label: string }>)[selectedCategory]?.label || selectedCategory;
     const title = quickTitle.trim() || `${catLabel} Expense`;
 
@@ -141,7 +143,7 @@ export const SimpleMobileView: React.FC<SimpleMobileViewProps> = ({
       person: currentUser,
       category: selectedCategory,
       paymentMethod,
-      fromAccountId: paymentMethod === 'bank' ? defaultAccount : undefined,
+      fromAccountId: paymentMethod === 'bank' ? chosenAccount : undefined,
       fromCashPerson: paymentMethod === 'cash' ? currentUser : undefined,
       notes: 'Logged via Simple Mobile mode',
     });
@@ -556,7 +558,7 @@ export const SimpleMobileView: React.FC<SimpleMobileViewProps> = ({
                       {formatINR(tx.amount)}
                     </span>
                     <button
-                      onClick={() => deleteTransaction(tx.id)}
+                      onClick={() => setDeleteTargetTx(tx)}
                       className="p-1 text-slate-300 hover:text-rose-600 transition"
                       title="Delete"
                     >
@@ -570,6 +572,14 @@ export const SimpleMobileView: React.FC<SimpleMobileViewProps> = ({
         )}
       </div>
 
+      <DeleteConfirmModal
+        transaction={deleteTargetTx}
+        onCancelNo={() => setDeleteTargetTx(null)}
+        onConfirmYes={(tx) => {
+          deleteTransaction(tx.id);
+          setDeleteTargetTx(null);
+        }}
+      />
     </div>
   );
 };

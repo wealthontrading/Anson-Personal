@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Transaction } from '../../types/finance';
-import { formatINR, formatMonthName } from '../../utils/formatters';
+import { formatINR, formatMonthName, getCurrentMonthStr } from '../../utils/formatters';
 
 interface IncomeExpenseChartProps {
   transactions: Transaction[];
@@ -14,10 +14,9 @@ export const IncomeExpenseChart: React.FC<IncomeExpenseChartProps> = ({
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   // Generate data for the last 5 months leading up to currentMonth
-  // Current month example: "2026-10"
   const getRecentMonths = () => {
     const list: string[] = [];
-    const [currYear, currMonth] = (currentMonth === 'all' ? '2026-10' : currentMonth)
+    const [currYear, currMonth] = (currentMonth === 'all' ? getCurrentMonthStr() : currentMonth)
       .split('-')
       .map(Number);
     for (let i = 4; i >= 0; i--) {

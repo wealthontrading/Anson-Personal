@@ -7,8 +7,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FinanceProvider } from './context/FinanceContext';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { DashboardHeader } from './components/dashboard/DashboardHeader';
-import { Sidebar, NavTab } from './components/navigation/Sidebar';
+import { NavTab } from './components/navigation/Sidebar';
 import { BottomNav } from './components/navigation/BottomNav';
+import { MoreMenuSheet } from './components/navigation/MoreMenuSheet';
 import { DashboardView } from './components/views/DashboardView';
 import { TransactionsView } from './components/views/TransactionsView';
 import { AccountsView } from './components/views/AccountsView';
@@ -26,10 +27,9 @@ import { AddEditAccountModal } from './components/modals/AddEditAccountModal';
 import { AddEditLoanModal } from './components/modals/AddEditLoanModal';
 import { BudgetManagementModal } from './components/modals/BudgetManagementModal';
 import { ReceiptViewerModal } from './components/common/ReceiptViewerModal';
-import { SimpleMobileView } from './components/views/SimpleMobileView';
 import { OfflineIndicator } from './components/common/OfflineIndicator';
-import { BankAccount, Loan, Transaction } from './types/finance';
-import { ArrowLeft } from 'lucide-react';
+import { NotificationBanner } from './components/common/NotificationBanner';
+import { BankAccount, Loan, LoanType, Transaction } from './types/finance';
 
 export type ModalType =
   | 'quick'
@@ -43,6 +43,7 @@ export type ModalType =
   | 'add_loan'
   | 'edit_loan'
   | 'receipt'
+  | 'more_menu'
   | null;
 
 function MainApp() {
@@ -56,32 +57,27 @@ function MainApp() {
     return 'dashboard';
   });
 
-  // Interface mode state
-  const [isSimpleMode, setIsSimpleMode] = useState<boolean>(false);
-
-  // Single active modal controller to prevent conflicting state and navigation races
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const activeModalRef = useRef<ModalType>(null);
   activeModalRef.current = activeModal;
 
   const [presetLoanId, setPresetLoanId] = useState<string | undefined>(undefined);
+  const [presetLoanType, setPresetLoanType] = useState<LoanType | undefined>(undefined);
+  const [returnToPayEmi, setReturnToPayEmi] = useState<boolean>(false);
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [receiptData, setReceiptData] = useState<{ imgUrl?: string; title: string }>({ title: '' });
 
-  // Track whether we pushed a history entry for the currently open modal
   const modalHistoryPushedRef = useRef(false);
 
-  // Open modal with clean history state
   const openModal = (type: ModalType) => {
     if (!type) return;
     setActiveModal(type);
     if (typeof window !== 'undefined') {
-      // If no modal history state was pushed yet, push one
       if (!modalHistoryPushedRef.current) {
         window.history.pushState(
-          { tab: currentTab, isSimple: isSimpleMode, isModal: true },
+          { tab: currentTab, isModal: true },
           '',
           window.location.hash || `#${currentTab}`
         );
@@ -90,33 +86,46 @@ function MainApp() {
     }
   };
 
-  // Close modal safely and navigate to appropriate view if an entry was saved
-  const closeModal = (saved?: boolean) => {
+  const closeModal = (saved?: boolean, createdLoanId?: string) => {
     const closedType = activeModal;
+
+    // If user clicked "+ Add Loan" inside PayEmiModal, return straight back to PayEmiModal
+    if (closedType === 'add_loan' && returnToPayEmi) {
+      setReturnToPayEmi(false);
+      setPresetLoanType(undefined);
+      setEditingLoan(null);
+      if (saved && createdLoanId) {
+        setPresetLoanId(createdLoanId);
+      }
+      setActiveModal('emi');
+      return;
+    }
+
     setActiveModal(null);
     setEditingAccount(null);
     setEditingLoan(null);
     setEditingTransaction(null);
     setPresetLoanId(undefined);
+    setPresetLoanType(undefined);
+    setReturnToPayEmi(false);
 
     if (saved) {
       if (closedType === 'add_account' || closedType === 'edit_account') {
         setCurrentTab('accounts');
         if (typeof window !== 'undefined') {
-          window.history.replaceState({ tab: 'accounts', isSimple: false, isModal: false }, '', '#accounts');
+          window.history.replaceState({ tab: 'accounts', isModal: false }, '', '#accounts');
         }
       } else if (closedType === 'add_loan' || closedType === 'edit_loan' || closedType === 'emi') {
         setCurrentTab('emis');
         if (typeof window !== 'undefined') {
-          window.history.replaceState({ tab: 'emis', isSimple: false, isModal: false }, '', '#emis');
+          window.history.replaceState({ tab: 'emis', isModal: false }, '', '#emis');
         }
       } else {
         setCurrentTab('transactions');
         if (typeof window !== 'undefined') {
-          window.history.replaceState({ tab: 'transactions', isSimple: false, isModal: false }, '', '#transactions');
+          window.history.replaceState({ tab: 'transactions', isModal: false }, '', '#transactions');
         }
       }
-      setIsSimpleMode(false);
       modalHistoryPushedRef.current = false;
       return;
     }
@@ -130,47 +139,24 @@ function MainApp() {
   };
 
   const handleSelectTab = (tab: NavTab, pushHistory = true) => {
-    setIsSimpleMode(false);
     if (pushHistory && typeof window !== 'undefined' && tab !== currentTab) {
-      window.history.pushState({ tab, isSimple: false, isModal: false }, '', `#${tab}`);
+      window.history.pushState({ tab, isModal: false }, '', `#${tab}`);
     }
     setCurrentTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const toggleSimpleMode = () => {
-    setIsSimpleMode((prev) => {
-      const next = !prev;
-      localStorage.setItem('anson_dona_simple_mode', String(next));
-      if (typeof window !== 'undefined') {
-        window.history.pushState(
-          { tab: currentTab, isSimple: next, isModal: false },
-          '',
-          next ? '#simple' : `#${currentTab}`
-        );
-      }
-      return next;
-    });
-  };
-
-  // Back button for sub-pages: directly navigates to dashboard without leaving applet
-  const handleGoBackToDashboard = () => {
-    handleSelectTab('dashboard', true);
-  };
-
-  // Browser Back Button & PopState Listener
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      // Initial state setup if needed
       if (!window.history.state) {
         window.history.replaceState(
-          { tab: currentTab, isSimple: isSimpleMode, isModal: false },
+          { tab: currentTab, isModal: false },
           '',
           window.location.hash || '#dashboard'
         );
       }
 
       const onPopState = (event: PopStateEvent) => {
-        // 1. If any modal is currently open when back is pressed, close the modal and remain on page
         if (activeModalRef.current !== null) {
           modalHistoryPushedRef.current = false;
           setActiveModal(null);
@@ -181,14 +167,9 @@ function MainApp() {
           return;
         }
 
-        // 2. Otherwise navigate to previous tab from history state
         if (event.state && event.state.tab) {
           setCurrentTab(event.state.tab);
-          if (typeof event.state.isSimple === 'boolean') {
-            setIsSimpleMode(event.state.isSimple);
-          }
         } else {
-          // Fallback based on clean hash
           const cleanHash = window.location.hash.replace('#', '').split('-')[0];
           if (['dashboard', 'transactions', 'accounts', 'emis', 'reports', 'settings'].includes(cleanHash)) {
             setCurrentTab(cleanHash as NavTab);
@@ -201,14 +182,13 @@ function MainApp() {
       window.addEventListener('popstate', onPopState);
       return () => window.removeEventListener('popstate', onPopState);
     }
-  }, [currentTab, isSimpleMode]);
+  }, [currentTab]);
 
-  // Actions from quick action menu
   const handleSelectQuickAction = (action: 'income' | 'expense' | 'transfer' | 'emi') => {
+    setEditingTransaction(null);
     if (action === 'income') {
       openModal('income');
     } else if (action === 'expense') {
-      setEditingTransaction(null);
       openModal('expense');
     } else if (action === 'transfer') {
       openModal('transfer');
@@ -220,7 +200,16 @@ function MainApp() {
 
   const handleEditTx = (tx: Transaction) => {
     setEditingTransaction(tx);
-    openModal('expense');
+    if (tx.type === 'income') {
+      openModal('income');
+    } else if (tx.type === 'transfer') {
+      openModal('transfer');
+    } else if (tx.type === 'emi_payment') {
+      setPresetLoanId(tx.loanId);
+      openModal('emi');
+    } else {
+      openModal('expense');
+    }
   };
 
   const handlePayEmiForLoan = (loanId?: string) => {
@@ -240,11 +229,26 @@ function MainApp() {
 
   const handleOpenEditLoan = (loan: Loan) => {
     setEditingLoan(loan);
+    setPresetLoanType(loan.type);
     openModal('edit_loan');
   };
 
-  const handleOpenAddLoan = () => {
+  const handleOpenAddLoan = (loanType?: LoanType) => {
     setEditingLoan(null);
+    setPresetLoanType(loanType || 'home_loan');
+    openModal('add_loan');
+  };
+
+  const handleOpenAddGoldLoan = () => {
+    setEditingLoan(null);
+    setPresetLoanType('gold_loan');
+    openModal('add_loan');
+  };
+
+  const handleAddLoanFromPayEmi = (loanType?: LoanType) => {
+    setEditingLoan(null);
+    setPresetLoanType(loanType || 'home_loan');
+    setReturnToPayEmi(true);
     openModal('add_loan');
   };
 
@@ -254,128 +258,98 @@ function MainApp() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 flex flex-col font-sans selection:bg-slate-900 selection:text-white">
-      {/* Top Header */}
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-slate-900 selection:text-white">
+      {/* Clean Single-Row Top Header */}
       <DashboardHeader
+        currentTab={currentTab}
+        onSelectTab={handleSelectTab}
         onOpenQuickAction={() => openModal('quick')}
-        isSimpleMode={isSimpleMode}
-        onToggleSimpleMode={toggleSimpleMode}
       />
 
-      {/* Main Body with Desktop Sidebar + Content */}
-      <div className="flex-1 flex max-w-7xl w-full mx-auto">
-        <Sidebar
-          currentTab={currentTab}
-          onSelectTab={handleSelectTab}
-          onOpenQuickAction={() => openModal('quick')}
-          isSimpleMode={isSimpleMode}
-          onToggleSimpleMode={toggleSimpleMode}
-        />
+      {/* Centered, Uncluttered Content Canvas */}
+      <main className="flex-1 w-full max-w-5xl mx-auto px-3.5 sm:px-6 pt-4 sm:pt-6 pb-24 md:pb-12">
+        {currentTab === 'dashboard' && (
+          <DashboardView
+            onOpenQuickAction={() => openModal('quick')}
+            onOpenActionType={handleSelectQuickAction}
+            onOpenBudgetModal={() => openModal('budget')}
+            onSelectTab={handleSelectTab}
+            onViewReceipt={handleViewReceipt}
+            onEditTransaction={handleEditTx}
+          />
+        )}
 
-        {/* Content View Area */}
-        <main className="flex-1 min-w-0 p-3 sm:p-6 lg:p-8 bg-slate-50/40">
-          {/* Visual Back Button for sub-pages to return safely to Dashboard */}
-          {!isSimpleMode && currentTab !== 'dashboard' && (
-            <div className="mb-4 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={handleGoBackToDashboard}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 active:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl shadow-2xs transition-all active:scale-95 cursor-pointer"
-              >
-                <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />
-                <span>Back to Dashboard</span>
-              </button>
-              <span className="text-xs font-bold text-slate-400 capitalize tracking-wider">
-                {currentTab}
-              </span>
-            </div>
-          )}
+        {currentTab === 'transactions' && (
+          <TransactionsView
+            onEditTransaction={handleEditTx}
+            onViewReceipt={handleViewReceipt}
+            onOpenQuickAction={() => openModal('quick')}
+          />
+        )}
 
-          {/* If Simple Mobile Mode is on, show dedicated 1-touch mobile view */}
-          {isSimpleMode ? (
-            <SimpleMobileView
-              onSwitchToFullView={() => {
-                setIsSimpleMode(false);
-                handleSelectTab('dashboard');
-              }}
-              onOpenQuickAction={() => openModal('quick')}
-              onOpenIncome={() => openModal('income')}
-              onOpenTransfer={() => openModal('transfer')}
-              onOpenEmi={() => openModal('emi')}
-            />
-          ) : (
-            <>
-              {currentTab === 'dashboard' && (
-                <DashboardView
-                  onOpenQuickAction={() => openModal('quick')}
-                  onOpenActionType={handleSelectQuickAction}
-                  onOpenBudgetModal={() => openModal('budget')}
-                  onSelectTab={handleSelectTab}
-                  onViewReceipt={handleViewReceipt}
-                />
-              )}
+        {currentTab === 'accounts' && (
+          <AccountsView
+            onOpenAddAccount={handleOpenAddAccount}
+            onEditAccount={handleOpenEditAccount}
+            onOpenTransfer={() => openModal('transfer')}
+            onOpenQuickIncome={() => openModal('income')}
+          />
+        )}
 
-              {currentTab === 'transactions' && (
-                <TransactionsView
-                  onEditTransaction={handleEditTx}
-                  onViewReceipt={handleViewReceipt}
-                  onOpenQuickAction={() => openModal('quick')}
-                />
-              )}
+        {currentTab === 'emis' && (
+          <EmisView
+            onOpenAddLoan={() => handleOpenAddLoan('home_loan')}
+            onOpenAddGoldLoan={handleOpenAddGoldLoan}
+            onEditLoan={handleOpenEditLoan}
+            onPayEmi={handlePayEmiForLoan}
+            onEditTransaction={handleEditTx}
+          />
+        )}
 
-              {currentTab === 'accounts' && (
-                <AccountsView
-                  onOpenAddAccount={handleOpenAddAccount}
-                  onEditAccount={handleOpenEditAccount}
-                  onOpenTransfer={() => openModal('transfer')}
-                  onOpenQuickIncome={() => openModal('income')}
-                />
-              )}
+        {currentTab === 'reports' && <ReportsView />}
 
-              {currentTab === 'emis' && (
-                <EmisView
-                  onOpenAddLoan={handleOpenAddLoan}
-                  onEditLoan={handleOpenEditLoan}
-                  onPayEmi={handlePayEmiForLoan}
-                />
-              )}
-
-              {currentTab === 'reports' && <ReportsView />}
-
-              {currentTab === 'settings' && <SettingsView />}
-            </>
-          )}
-        </main>
-      </div>
+        {currentTab === 'settings' && <SettingsView />}
+      </main>
 
       {/* Mobile Bottom Navigation */}
       <BottomNav
         currentTab={currentTab}
         onSelectTab={handleSelectTab}
         onOpenQuickAction={() => openModal('quick')}
-        isSimpleMode={isSimpleMode}
-        onToggleSimpleMode={toggleSimpleMode}
+        onOpenMoreMenu={() => openModal('more_menu')}
       />
 
       {/* Offline Alert */}
       <OfflineIndicator />
 
-      {/* One-Time Device Login Overlay */}
+      {/* Live Phone & EMI Notification Toast Stack */}
+      <NotificationBanner />
+
+      {/* Password Login System (unchanged behavior) */}
       <LoginModal />
 
       {/* PIN Security Overlay */}
       <PinLockModal />
 
-      {/* Modals & Overlays - using centralized activeModal to prevent race conditions */}
+      {/* Mobile More Menu Sheet */}
+      <MoreMenuSheet
+        isOpen={activeModal === 'more_menu'}
+        onClose={() => closeModal()}
+        onSelectTab={handleSelectTab}
+        onOpenBudgetModal={() => openModal('budget')}
+      />
+
+      {/* Modals & Sheets */}
       <QuickActionModal
         isOpen={activeModal === 'quick'}
-        onClose={closeModal}
+        onClose={() => closeModal()}
         onSelectAction={handleSelectQuickAction}
       />
 
       <AddIncomeModal
         isOpen={activeModal === 'income'}
         onClose={closeModal}
+        editTx={editingTransaction}
       />
 
       <AddExpenseModal
@@ -387,12 +361,15 @@ function MainApp() {
       <TransferMoneyModal
         isOpen={activeModal === 'transfer'}
         onClose={closeModal}
+        editTx={editingTransaction}
       />
 
       <PayEmiModal
         isOpen={activeModal === 'emi'}
         onClose={closeModal}
         presetLoanId={presetLoanId}
+        editTx={editingTransaction}
+        onOpenAddLoan={handleAddLoanFromPayEmi}
       />
 
       <AddEditAccountModal
@@ -405,6 +382,7 @@ function MainApp() {
         isOpen={activeModal === 'add_loan' || activeModal === 'edit_loan'}
         onClose={closeModal}
         editLoanData={editingLoan}
+        presetLoanType={presetLoanType}
       />
 
       <BudgetManagementModal
@@ -416,7 +394,7 @@ function MainApp() {
         isOpen={activeModal === 'receipt'}
         imageUrl={receiptData.imgUrl}
         title={receiptData.title}
-        onClose={closeModal}
+        onClose={() => closeModal()}
       />
     </div>
   );

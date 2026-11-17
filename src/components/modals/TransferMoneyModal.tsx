@@ -1,26 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { useFinance } from '../../context/FinanceContext';
-import { Person, TransferType } from '../../types/finance';
+import { Person, Transaction, TransferType } from '../../types/finance';
 import { getTodayISO } from '../../utils/formatters';
 import { X, ArrowLeftRight, Check, Info } from 'lucide-react';
 
 interface TransferMoneyModalProps {
   isOpen: boolean;
   onClose: (saved?: boolean) => void;
+  editTx?: Transaction | null;
 }
 
 export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
   isOpen,
   onClose,
+  editTx,
 }) => {
-  const { currentUser, bankAccounts, cashWallets, transferMoney } = useFinance();
+  const { currentUser, bankAccounts, defaultBankAccount, cashWallets, transferMoney, editTransaction } = useFinance();
+
+  const sortedAccounts = [...bankAccounts].sort((a, b) => {
+    if (Boolean(a.isDefault) !== Boolean(b.isDefault)) {
+      return a.isDefault ? -1 : 1;
+    }
+    return 0;
+  });
 
   const [transferType, setTransferType] = useState<TransferType>(() => {
     if (bankAccounts.length >= 2) return 'bank_to_bank';
     if (bankAccounts.length === 1) return 'bank_to_cash';
     return 'cash_to_cash';
   });
-  const [person, setPerson] = useState<Person>(currentUser);
   const [amount, setAmount] = useState<string>('');
   const [title, setTitle] = useState<string>(() => {
     if (bankAccounts.length >= 2) return 'Account Transfer';
@@ -28,7 +36,7 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
     return 'Cash Handover / Transfer';
   });
   const [date, setDate] = useState<string>(getTodayISO());
-  const [fromAccountId, setFromAccountId] = useState<string>(bankAccounts[0]?.id || '');
+  const [fromAccountId, setFromAccountId] = useState<string>(defaultBankAccount?.id || bankAccounts[0]?.id || '');
   const [toAccountId, setToAccountId] = useState<string>(bankAccounts[1]?.id || bankAccounts[0]?.id || '');
   const [fromCashPerson, setFromCashPerson] = useState<Person>('Anson');
   const [toCashPerson, setToCashPerson] = useState<Person>('Dona');
@@ -36,7 +44,28 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return;
+    if (editTx) {
+      const inferredType: TransferType =
+        editTx.transferType ||
+        (editTx.fromAccountId && editTx.toAccountId
+          ? 'bank_to_bank'
+          : editTx.fromAccountId && editTx.toCashPerson
+          ? 'bank_to_cash'
+          : editTx.fromCashPerson && editTx.toAccountId
+          ? 'cash_to_bank'
+          : 'cash_to_cash');
+      setTransferType(inferredType);
+      setAmount(String(editTx.amount));
+      setTitle(editTx.title);
+      setDate(editTx.date);
+      setFromAccountId(editTx.fromAccountId || defaultBankAccount?.id || sortedAccounts[0]?.id || '');
+      setToAccountId(editTx.toAccountId || sortedAccounts[1]?.id || sortedAccounts[0]?.id || '');
+      setFromCashPerson(editTx.fromCashPerson || 'Anson');
+      setToCashPerson(editTx.toCashPerson || 'Dona');
+      setNotes(editTx.notes || '');
+      setError('');
+    } else {
       if (bankAccounts.length >= 2) {
         setTransferType('bank_to_bank');
         setTitle('Account Transfer');
@@ -47,22 +76,28 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
         setTransferType('cash_to_cash');
         setTitle('Cash Handover / Transfer');
       }
+      const primary = defaultBankAccount || sortedAccounts[0];
+      const secondary = sortedAccounts.find((a) => a.id !== primary?.id) || primary;
+      setFromAccountId(primary?.id || '');
+      setToAccountId(secondary?.id || '');
+      setDate(getTodayISO());
       setAmount('');
       setNotes('');
       setError('');
     }
-  }, [isOpen, bankAccounts.length]);
+  }, [isOpen, editTx, bankAccounts.length, defaultBankAccount]);
 
   useEffect(() => {
-    if (bankAccounts.length > 0) {
-      if (!fromAccountId || !bankAccounts.some((a) => a.id === fromAccountId)) {
-        setFromAccountId(bankAccounts[0].id);
+    if (sortedAccounts.length > 0) {
+      if (!fromAccountId || !sortedAccounts.some((a) => a.id === fromAccountId)) {
+        setFromAccountId((defaultBankAccount || sortedAccounts[0]).id);
       }
-      if (!toAccountId || !bankAccounts.some((a) => a.id === toAccountId)) {
-        setToAccountId(bankAccounts[1]?.id || bankAccounts[0].id);
+      if (!toAccountId || !sortedAccounts.some((a) => a.id === toAccountId)) {
+        const secondary = sortedAccounts.find((a) => a.id !== fromAccountId) || sortedAccounts[0];
+        setToAccountId(secondary.id);
       }
     }
-  }, [bankAccounts, fromAccountId, toAccountId]);
+  }, [bankAccounts, defaultBankAccount, fromAccountId, toAccountId]);
 
   if (!isOpen) return null;
 
@@ -128,18 +163,42 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
       return;
     }
 
-    transferMoney({
-      title: title.trim() || 'Money Transfer',
-      amount: numAmount,
-      date,
-      person: currentUser,
-      transferType,
-      fromAccountId: transferType === 'bank_to_bank' || transferType === 'bank_to_cash' ? fromAccountId : undefined,
-      toAccountId: transferType === 'bank_to_bank' || transferType === 'cash_to_bank' ? toAccountId : undefined,
-      fromCashPerson: transferType === 'cash_to_bank' || transferType === 'cash_to_cash' ? fromCashPerson : undefined,
-      toCashPerson: transferType === 'bank_to_cash' || transferType === 'cash_to_cash' ? toCashPerson : undefined,
-      notes: notes.trim(),
-    });
+    const nextFromAccountId =
+      transferType === 'bank_to_bank' || transferType === 'bank_to_cash' ? fromAccountId : undefined;
+    const nextToAccountId =
+      transferType === 'bank_to_bank' || transferType === 'cash_to_bank' ? toAccountId : undefined;
+    const nextFromCashPerson =
+      transferType === 'cash_to_bank' || transferType === 'cash_to_cash' ? fromCashPerson : undefined;
+    const nextToCashPerson =
+      transferType === 'bank_to_cash' || transferType === 'cash_to_cash' ? toCashPerson : undefined;
+
+    if (editTx) {
+      editTransaction(editTx.id, {
+        title: title.trim() || 'Money Transfer',
+        amount: numAmount,
+        date,
+        person: editTx.person || currentUser,
+        transferType,
+        fromAccountId: nextFromAccountId,
+        toAccountId: nextToAccountId,
+        fromCashPerson: nextFromCashPerson,
+        toCashPerson: nextToCashPerson,
+        notes: notes.trim(),
+      });
+    } else {
+      transferMoney({
+        title: title.trim() || 'Money Transfer',
+        amount: numAmount,
+        date,
+        person: currentUser,
+        transferType,
+        fromAccountId: nextFromAccountId,
+        toAccountId: nextToAccountId,
+        fromCashPerson: nextFromCashPerson,
+        toCashPerson: nextToCashPerson,
+        notes: notes.trim(),
+      });
+    }
 
     onClose(true);
   };
@@ -166,7 +225,9 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
               <ArrowLeftRight className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-900">Transfer Funds</h3>
+              <h3 className="text-lg font-bold text-slate-900">
+                {editTx ? 'Edit Transfer' : 'Transfer Funds'}
+              </h3>
               <p className="text-xs text-slate-500">Live multi-device synced balance transfer</p>
             </div>
           </div>
@@ -278,9 +339,9 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
                     onChange={(e) => setFromAccountId(e.target.value)}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
                   >
-                    {bankAccounts.map((acc) => (
+                    {sortedAccounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
-                        {acc.bankName} - {acc.name} ({acc.owner}) • Bal: ₹{acc.currentBalance.toLocaleString('en-IN')}
+                        {acc.isDefault ? '★ Default · ' : ''}{acc.bankName} - {acc.name} ({acc.owner}) • Bal: ₹{acc.currentBalance.toLocaleString('en-IN')}
                       </option>
                     ))}
                   </select>
@@ -315,9 +376,9 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
                     onChange={(e) => setToAccountId(e.target.value)}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
                   >
-                    {bankAccounts.map((acc) => (
+                    {sortedAccounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
-                        {acc.bankName} - {acc.name} ({acc.owner}) • Bal: ₹{acc.currentBalance.toLocaleString('en-IN')}
+                        {acc.isDefault ? '★ Default · ' : ''}{acc.bankName} - {acc.name} ({acc.owner}) • Bal: ₹{acc.currentBalance.toLocaleString('en-IN')}
                       </option>
                     ))}
                   </select>
@@ -394,7 +455,7 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
               className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-bold text-sm rounded-2xl shadow-md transition flex items-center justify-center gap-2"
             >
               <Check className="w-4 h-4" />
-              Complete Transfer
+              {editTx ? 'Update Transfer' : 'Complete Transfer'}
             </button>
           </div>
         </form>

@@ -37,20 +37,20 @@ export const CategoryDonutChart: React.FC<CategoryDonutChartProps> = ({
       <div>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-sm font-bold text-slate-900 tracking-tight">
-              Expense Category Breakdown
+            <h3 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
+              Where Money Went
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Distribution of this month's outflows
+              Spending by category
             </p>
           </div>
-          <span className="text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg">
-            {formatINR(totalExpenses)} Total
+          <span className="text-sm font-extrabold text-slate-900 tabular-nums">
+            {formatINR(totalExpenses)}
           </span>
         </div>
 
         {totalExpenses === 0 ? (
-          <div className="py-12 text-center text-slate-400 text-xs font-medium">
+          <div className="py-10 text-center text-slate-400 text-xs font-medium">
             No expenses recorded for this period yet.
           </div>
         ) : (
@@ -71,9 +71,9 @@ export const CategoryDonutChart: React.FC<CategoryDonutChartProps> = ({
                       />
                       <span className="font-semibold text-slate-800 truncate">{label}</span>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0 tabular-nums">
                       <span className="font-extrabold text-slate-900">{formatINR(amount)}</span>
-                      <span className="text-[11px] font-bold text-slate-400 w-8 text-right">
+                      <span className="text-[11px] font-semibold text-slate-400 w-8 text-right">
                         {percentage}%
                       </span>
                     </div>

@@ -1,10 +1,10 @@
 import React from 'react';
 import {
-  LayoutDashboard,
-  IndianRupee,
+  Home,
+  ReceiptText,
   Plus,
-  Landmark,
-  BarChart3,
+  Wallet,
+  Menu,
 } from 'lucide-react';
 import { NavTab } from './Sidebar';
 
@@ -12,76 +12,83 @@ interface BottomNavProps {
   currentTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
   onOpenQuickAction: () => void;
-  isSimpleMode?: boolean;
-  onToggleSimpleMode?: () => void;
+  onOpenMoreMenu: () => void;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
   currentTab,
   onSelectTab,
   onOpenQuickAction,
+  onOpenMoreMenu,
 }) => {
+  const isMoreActive = currentTab === 'emis' || currentTab === 'reports' || currentTab === 'settings';
+
   return (
-    <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-2 py-1.5 pb-safe shadow-lg">
-      <div className="flex items-center justify-around max-w-lg mx-auto">
-        
-        {/* Home / Dashboard */}
+    <nav
+      aria-label="Mobile navigation"
+      className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 px-2 pt-1.5 pb-safe"
+    >
+      <div className="grid grid-cols-5 items-center max-w-md mx-auto">
+        {/* Home */}
         <button
+          type="button"
           onClick={() => onSelectTab('dashboard')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition ${
-            currentTab === 'dashboard' ? 'text-slate-900 font-extrabold' : 'text-slate-400 font-medium'
+          className={`min-h-[48px] flex flex-col items-center justify-center rounded-xl transition cursor-pointer ${
+            currentTab === 'dashboard' ? 'text-slate-900 font-bold' : 'text-slate-400 font-medium'
           }`}
         >
-          <LayoutDashboard className={`w-5 h-5 ${currentTab === 'dashboard' ? 'text-slate-900 stroke-[2.5]' : ''}`} />
-          <span className="text-[10px] mt-0.5">Home</span>
+          <Home className={`w-5 h-5 ${currentTab === 'dashboard' ? 'stroke-[2.5]' : ''}`} />
+          <span className="text-[11px] mt-0.5 leading-none">Home</span>
         </button>
 
-        {/* Transactions */}
+        {/* History */}
         <button
+          type="button"
           onClick={() => onSelectTab('transactions')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition ${
-            currentTab === 'transactions' ? 'text-slate-900 font-extrabold' : 'text-slate-400 font-medium'
+          className={`min-h-[48px] flex flex-col items-center justify-center rounded-xl transition cursor-pointer ${
+            currentTab === 'transactions' ? 'text-slate-900 font-bold' : 'text-slate-400 font-medium'
           }`}
         >
-          <IndianRupee className={`w-5 h-5 ${currentTab === 'transactions' ? 'text-slate-900 stroke-[2.5]' : ''}`} />
-          <span className="text-[10px] mt-0.5">Transactions</span>
+          <ReceiptText className={`w-5 h-5 ${currentTab === 'transactions' ? 'stroke-[2.5]' : ''}`} />
+          <span className="text-[11px] mt-0.5 leading-none">History</span>
         </button>
 
-        {/* Center Prominent Add (+) Button */}
-        <div className="relative -top-3.5 flex flex-col items-center">
+        {/* Prominent Center Thumb Add Button */}
+        <div className="flex flex-col items-center justify-center">
           <button
+            type="button"
             onClick={onOpenQuickAction}
-            className="w-13 h-13 rounded-full bg-slate-900 text-white flex items-center justify-center shadow-lg hover:bg-slate-800 active:scale-95 transition-all border-4 border-white cursor-pointer"
             aria-label="Add Transaction"
+            className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-md hover:bg-slate-800 active:scale-95 transition cursor-pointer"
           >
             <Plus className="w-6 h-6 stroke-[2.5] text-emerald-400" />
           </button>
-          <span className="text-[10px] font-bold text-slate-700 mt-0.5">Add</span>
         </div>
 
-        {/* EMIs */}
+        {/* Accounts (Bank & Cash) */}
         <button
-          onClick={() => onSelectTab('emis')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition ${
-            currentTab === 'emis' ? 'text-slate-900 font-extrabold' : 'text-slate-400 font-medium'
+          type="button"
+          onClick={() => onSelectTab('accounts')}
+          className={`min-h-[48px] flex flex-col items-center justify-center rounded-xl transition cursor-pointer ${
+            currentTab === 'accounts' ? 'text-slate-900 font-bold' : 'text-slate-400 font-medium'
           }`}
         >
-          <Landmark className={`w-5 h-5 ${currentTab === 'emis' ? 'text-slate-900 stroke-[2.5]' : ''}`} />
-          <span className="text-[10px] mt-0.5">EMIs</span>
+          <Wallet className={`w-5 h-5 ${currentTab === 'accounts' ? 'stroke-[2.5]' : ''}`} />
+          <span className="text-[11px] mt-0.5 leading-none">Accounts</span>
         </button>
 
-        {/* Reports */}
+        {/* More (Loans, Reports, Budgets, Settings) */}
         <button
-          onClick={() => onSelectTab('reports')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition ${
-            currentTab === 'reports' ? 'text-slate-900 font-extrabold' : 'text-slate-400 font-medium'
+          type="button"
+          onClick={onOpenMoreMenu}
+          className={`min-h-[48px] flex flex-col items-center justify-center rounded-xl transition cursor-pointer ${
+            isMoreActive ? 'text-slate-900 font-bold' : 'text-slate-400 font-medium'
           }`}
         >
-          <BarChart3 className={`w-5 h-5 ${currentTab === 'reports' ? 'text-slate-900 stroke-[2.5]' : ''}`} />
-          <span className="text-[10px] mt-0.5">Reports</span>
+          <Menu className={`w-5 h-5 ${isMoreActive ? 'stroke-[2.5]' : ''}`} />
+          <span className="text-[11px] mt-0.5 leading-none">More</span>
         </button>
-
       </div>
-    </div>
+    </nav>
   );
 };

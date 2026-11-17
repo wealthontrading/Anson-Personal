@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback, ReactNode } from 'react';
 import {
   BankAccount,
   CashWallet,
@@ -7,6 +7,7 @@ import {
   DashboardView,
   FinancialSummary,
   Loan,
+  PaymentFrequency,
   Person,
   Transaction,
   TransferType,
@@ -21,6 +22,16 @@ import {
   INITIAL_USERS,
 } from '../data/seedData';
 import { getCurrentMonthStr, getTodayISO } from '../utils/formatters';
+import {
+  AppNotificationPayload,
+  checkAndTriggerEmiReminders,
+  formatTransactionNotification,
+  getMsUntilNextEmiSlot,
+  getOrCreateDeviceId,
+  isNotificationSoundEnabled,
+  setNotificationSoundEnabledStored,
+  showPhoneNotification,
+} from '../utils/notifications';
 import { db } from '../lib/firebase';
 import {
   collection,
@@ -75,6 +86,19 @@ interface FinanceContextType {
   categoryColors: Record<string, string>;
   categoryBudgets: CategoryBudget[];
   isLiveSyncing: boolean;
+  defaultBankAccount: BankAccount | undefined;
+
+  // Notifications & EMI Reminders
+  deviceId: string;
+  notifyPartnerTransactions: boolean;
+  setNotifyPartnerTransactions: (enabled: boolean) => void;
+  notifyEmiReminders: boolean;
+  setNotifyEmiReminders: (enabled: boolean) => void;
+  notificationSoundEnabled: boolean;
+  setNotificationSoundEnabled: (enabled: boolean) => void;
+  inAppNotifications: AppNotificationPayload[];
+  pushInAppNotification: (payload: AppNotificationPayload) => void;
+  dismissInAppNotification: (id: string) => void;
 
   // Actions
   addTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'>) => Transaction;
@@ -85,8 +109,9 @@ interface FinanceContextType {
   addBankAccount: (account: Omit<BankAccount, 'id' | 'createdAt'>) => void;
   editBankAccount: (id: string, updated: Partial<BankAccount>) => void;
   deleteBankAccount: (id: string) => void;
+  setDefaultBankAccount: (id: string) => void;
 
-  addLoan: (loan: Omit<Loan, 'id'>) => void;
+  addLoan: (loan: Omit<Loan, 'id'>) => Loan;
   editLoan: (id: string, updated: Partial<Loan>) => void;
   deleteLoan: (id: string) => void;
 
@@ -103,6 +128,8 @@ interface FinanceContextType {
     accountId?: string;
     date: string;
     notes?: string;
+    paymentFrequency?: PaymentFrequency;
+    interestAmount?: number;
   }) => void;
 
   transferMoney: (params: {
@@ -143,6 +170,9 @@ const STORAGE_KEYS = {
   CATEGORY_COLORS: 'anson_dona_category_colors_v7',
   BUDGETS: 'anson_dona_budgets_v6_safe',
   IS_LOGGED_IN: 'anson_dona_is_logged_in_v6_safe',
+  NOTIFY_PARTNER: 'anson_dona_notify_partner_v1',
+  NOTIFY_EMI: 'anson_dona_notify_emi_v1',
+  SEEN_TX_IDS: 'anson_dona_seen_tx_ids_v1',
 };
 
 // Clean legacy cached transaction keys from previous sessions
@@ -187,6 +217,86 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [isLiveSyncing, setIsLiveSyncing] = useState<boolean>(true);
+  const [deviceId] = useState<string>(() => getOrCreateDeviceId());
+
+  const [notifyPartnerTransactions, setNotifyPartnerTransactionsState] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.NOTIFY_PARTNER);
+      return stored === null ? true : stored === 'true';
+    } catch {
+      return true;
+    }
+  });
+
+  const [notifyEmiReminders, setNotifyEmiRemindersState] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.NOTIFY_EMI);
+      return stored === null ? true : stored === 'true';
+    } catch {
+      return true;
+    }
+  });
+
+  const [notificationSoundEnabled, setNotificationSoundEnabledState] = useState<boolean>(() =>
+    isNotificationSoundEnabled()
+  );
+
+  const notifyPartnerRef = useRef<boolean>(notifyPartnerTransactions);
+  notifyPartnerRef.current = notifyPartnerTransactions;
+
+  const setNotifyPartnerTransactions = (enabled: boolean) => {
+    setNotifyPartnerTransactionsState(enabled);
+    notifyPartnerRef.current = enabled;
+    try {
+      localStorage.setItem(STORAGE_KEYS.NOTIFY_PARTNER, String(enabled));
+    } catch {}
+  };
+
+  const setNotifyEmiReminders = (enabled: boolean) => {
+    setNotifyEmiRemindersState(enabled);
+    try {
+      localStorage.setItem(STORAGE_KEYS.NOTIFY_EMI, String(enabled));
+    } catch {}
+  };
+
+  const setNotificationSoundEnabled = (enabled: boolean) => {
+    setNotificationSoundEnabledState(enabled);
+    setNotificationSoundEnabledStored(enabled);
+  };
+
+  const [inAppNotifications, setInAppNotifications] = useState<AppNotificationPayload[]>([]);
+
+  const dismissInAppNotification = useCallback((id: string) => {
+    setInAppNotifications((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const pushInAppNotification = useCallback((payload: AppNotificationPayload) => {
+    setInAppNotifications((prev) => [payload, ...prev.filter((p) => p.id !== payload.id)].slice(0, 4));
+    setTimeout(() => {
+      setInAppNotifications((prev) => prev.filter((item) => item.id !== payload.id));
+    }, 8000);
+  }, []);
+
+  const pushInAppNotificationRef = useRef(pushInAppNotification);
+  pushInAppNotificationRef.current = pushInAppNotification;
+
+  const seenTxIdsRef = useRef<Set<string>>((() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.SEEN_TX_IDS);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return new Set<string>(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      return new Set<string>();
+    }
+  })());
+
+  const persistSeenTxIds = useCallback(() => {
+    try {
+      const recent = Array.from(seenTxIdsRef.current).slice(-150);
+      seenTxIdsRef.current = new Set(recent);
+      localStorage.setItem(STORAGE_KEYS.SEEN_TX_IDS, JSON.stringify(recent));
+    } catch {}
+  }, []);
 
   // Active dashboard view (Family, Anson, Dona)
   const [activeDashboard, setActiveDashboardState] = useState<DashboardView>(() => {
@@ -347,9 +457,10 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   // ==========================================
   useEffect(() => {
     let unsubs: (() => void)[] = [];
+    let isFirstTxSnapshot = true;
 
     try {
-      // 1. Transactions Live Listener
+      // 1. Transactions Live Listener (with cross-phone notification trigger)
       const unsubTx = onSnapshot(
         collection(db, 'transactions'),
         (snapshot) => {
@@ -357,19 +468,52 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
           if (!snapshot.empty) {
             const liveTxList: Transaction[] = [];
             snapshot.forEach((docSnap) => {
-              liveTxList.push({ ...docSnap.data(), id: docSnap.id } as Transaction);
+              const tx = { ...docSnap.data(), id: docSnap.id } as Transaction;
+              liveTxList.push(tx);
+              if (isFirstTxSnapshot) {
+                seenTxIdsRef.current.add(tx.id);
+              }
             });
             liveTxList.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''));
             setTransactions(liveTxList);
             try {
               localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(liveTxList));
             } catch {}
+
+            if (!isFirstTxSnapshot) {
+              let addedRemote = false;
+              snapshot.docChanges().forEach((change) => {
+                if (change.type === 'added') {
+                  const tx = { ...change.doc.data(), id: change.doc.id } as Transaction;
+                  const alreadySeen = seenTxIdsRef.current.has(tx.id);
+                  seenTxIdsRef.current.add(tx.id);
+                  addedRemote = true;
+
+                  if (!alreadySeen && tx.createdByDevice !== deviceId && notifyPartnerRef.current) {
+                    const { title, body } = formatTransactionNotification(tx);
+                    showPhoneNotification({
+                      title,
+                      body,
+                      tag: `tx-${tx.id}`,
+                      kind: 'transaction',
+                      onInAppNotify: pushInAppNotificationRef.current,
+                    });
+                  }
+                }
+              });
+              if (addedRemote) {
+                persistSeenTxIds();
+              }
+            } else {
+              persistSeenTxIds();
+            }
           } else {
             setTransactions([]);
             try {
               localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify([]));
             } catch {}
           }
+          isFirstTxSnapshot = false;
         },
         (error) => {
           console.warn('Firestore live transactions sync error:', error);
@@ -629,133 +773,166 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     );
   };
 
-  // Helper to sync balance adjustments to local state AND Firestore safely
-  const adjustBalances = (
+  // Pure helper to apply a transaction delta (+1 apply, -1 reverse) across wallets, bank accounts, and loans
+  const applyTransactionDelta = (
     tx: Transaction,
     direction: 1 | -1,
-    currentWallets = cashWallets,
-    currentAccs = bankAccounts,
-    currentLns = loans
-  ) => {
+    walletsInput: CashWallet[],
+    accsInput: BankAccount[],
+    loansInput: Loan[],
+    changedWallets: Set<string>,
+    changedAccs: Set<string>,
+    changedLoans: Set<string>
+  ): { wallets: CashWallet[]; accs: BankAccount[]; lns: Loan[] } => {
     const { type, amount, fromAccountId, toAccountId, fromCashPerson, toCashPerson, paymentMethod, person } = tx;
+    let nextWallets = walletsInput.map((w) => ({ ...w }));
+    let nextAccs = accsInput.map((a) => ({ ...a }));
+    let nextLoans = loansInput.map((l) => ({ ...l }));
 
     if (type === 'income') {
       if (paymentMethod === 'cash') {
-        const updatedWallets = currentWallets.map((w) => {
-          if (w.owner === person) {
-            const updated = { ...w, balance: w.balance + direction * amount, lastUpdated: getTodayISO() };
-            setDoc(doc(db, 'cash_wallets', person), sanitizeForFirestore(updated)).catch(() => {});
-            return updated;
+        const cashOwner = toCashPerson || person;
+        nextWallets = nextWallets.map((w) => {
+          if (w.owner === cashOwner) {
+            changedWallets.add(cashOwner);
+            return { ...w, balance: w.balance + direction * amount, lastUpdated: getTodayISO() };
           }
           return w;
         });
-        setCashWallets(updatedWallets);
       } else if (toAccountId) {
-        const updatedAccounts = currentAccs.map((acc) => {
+        nextAccs = nextAccs.map((acc) => {
           if (acc.id === toAccountId) {
-            const updated = { ...acc, currentBalance: acc.currentBalance + direction * amount };
-            setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(updated)).catch(() => {});
-            return updated;
+            changedAccs.add(acc.id);
+            return { ...acc, currentBalance: acc.currentBalance + direction * amount };
           }
           return acc;
         });
-        setBankAccounts(updatedAccounts);
       }
     } else if (type === 'expense' || type === 'emi_payment') {
       if (paymentMethod === 'cash') {
         const cashOwner = fromCashPerson || person;
-        const updatedWallets = currentWallets.map((w) => {
+        nextWallets = nextWallets.map((w) => {
           if (w.owner === cashOwner) {
-            const updated = { ...w, balance: w.balance - direction * amount, lastUpdated: getTodayISO() };
-            setDoc(doc(db, 'cash_wallets', cashOwner), sanitizeForFirestore(updated)).catch(() => {});
-            return updated;
+            changedWallets.add(cashOwner);
+            return { ...w, balance: w.balance - direction * amount, lastUpdated: getTodayISO() };
           }
           return w;
         });
-        setCashWallets(updatedWallets);
       } else if (fromAccountId) {
-        const updatedAccounts = currentAccs.map((acc) => {
+        nextAccs = nextAccs.map((acc) => {
           if (acc.id === fromAccountId) {
-            const updated = { ...acc, currentBalance: acc.currentBalance - direction * amount };
-            setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(updated)).catch(() => {});
-            return updated;
+            changedAccs.add(acc.id);
+            return { ...acc, currentBalance: acc.currentBalance - direction * amount };
           }
           return acc;
         });
-        setBankAccounts(updatedAccounts);
       }
 
-      // If it's an EMI payment, also adjust loan principal and EMI count
       if (type === 'emi_payment' && tx.loanId) {
-        const updatedLoans = currentLns.map((l) => {
+        nextLoans = nextLoans.map((l) => {
           if (l.id === tx.loanId) {
-            const newEmisPaid = Math.max(0, l.emisPaid + direction);
+            changedLoans.add(l.id);
+            const emiCountStep =
+              l.type === 'gold_loan'
+                ? 1
+                : tx.paymentFrequency === 'yearly'
+                ? 12
+                : tx.paymentFrequency === 'quarterly'
+                ? 3
+                : 1;
+            const newEmisPaid = Math.max(0, l.emisPaid + direction * emiCountStep);
             const newEmisRem = Math.max(0, l.tenureMonths - newEmisPaid);
-            const principalComponent = amount * 0.7;
+            let principalComponent = 0;
+            if (l.type === 'gold_loan') {
+              // Gold loan payments primarily cover quarterly/monthly/annual interest; only excess reduces principal
+              if (typeof tx.interestAmount === 'number') {
+                principalComponent = Math.max(0, amount - tx.interestAmount);
+              } else {
+                principalComponent = 0;
+              }
+            } else if (typeof tx.interestAmount === 'number' && tx.interestAmount <= amount) {
+              principalComponent = Math.max(0, amount - tx.interestAmount);
+            } else {
+              principalComponent = amount * 0.7;
+            }
             const newOutstanding = Math.max(0, l.outstandingPrincipal - direction * principalComponent);
-            const updated = {
+            return {
               ...l,
               emisPaid: newEmisPaid,
               emisRemaining: newEmisRem,
               outstandingPrincipal: Math.round(newOutstanding),
             };
-            setDoc(doc(db, 'loans', l.id), sanitizeForFirestore(updated)).catch(() => {});
-            return updated;
           }
           return l;
         });
-        setLoans(updatedLoans);
       }
     } else if (type === 'transfer') {
-      // Source reduction
       if (fromAccountId) {
-        setBankAccounts((prev) =>
-          prev.map((acc) => {
-            if (acc.id === fromAccountId) {
-              const updated = { ...acc, currentBalance: acc.currentBalance - direction * amount };
-              setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(updated)).catch(() => {});
-              return updated;
-            }
-            return acc;
-          })
-        );
+        nextAccs = nextAccs.map((acc) => {
+          if (acc.id === fromAccountId) {
+            changedAccs.add(acc.id);
+            return { ...acc, currentBalance: acc.currentBalance - direction * amount };
+          }
+          return acc;
+        });
       } else if (fromCashPerson) {
-        setCashWallets((prev) =>
-          prev.map((w) => {
-            if (w.owner === fromCashPerson) {
-              const updated = { ...w, balance: w.balance - direction * amount, lastUpdated: getTodayISO() };
-              setDoc(doc(db, 'cash_wallets', fromCashPerson), sanitizeForFirestore(updated)).catch(() => {});
-              return updated;
-            }
-            return w;
-          })
-        );
+        nextWallets = nextWallets.map((w) => {
+          if (w.owner === fromCashPerson) {
+            changedWallets.add(fromCashPerson);
+            return { ...w, balance: w.balance - direction * amount, lastUpdated: getTodayISO() };
+          }
+          return w;
+        });
       }
 
-      // Destination addition
       if (toAccountId) {
-        setBankAccounts((prev) =>
-          prev.map((acc) => {
-            if (acc.id === toAccountId) {
-              const updated = { ...acc, currentBalance: acc.currentBalance + direction * amount };
-              setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(updated)).catch(() => {});
-              return updated;
-            }
-            return acc;
-          })
-        );
+        nextAccs = nextAccs.map((acc) => {
+          if (acc.id === toAccountId) {
+            changedAccs.add(acc.id);
+            return { ...acc, currentBalance: acc.currentBalance + direction * amount };
+          }
+          return acc;
+        });
       } else if (toCashPerson) {
-        setCashWallets((prev) =>
-          prev.map((w) => {
-            if (w.owner === toCashPerson) {
-              const updated = { ...w, balance: w.balance + direction * amount, lastUpdated: getTodayISO() };
-              setDoc(doc(db, 'cash_wallets', toCashPerson), sanitizeForFirestore(updated)).catch(() => {});
-              return updated;
-            }
-            return w;
-          })
-        );
+        nextWallets = nextWallets.map((w) => {
+          if (w.owner === toCashPerson) {
+            changedWallets.add(toCashPerson);
+            return { ...w, balance: w.balance + direction * amount, lastUpdated: getTodayISO() };
+          }
+          return w;
+        });
       }
+    }
+
+    return { wallets: nextWallets, accs: nextAccs, lns: nextLoans };
+  };
+
+  const commitBalanceChanges = (
+    nextState: { wallets: CashWallet[]; accs: BankAccount[]; lns: Loan[] },
+    changedWallets: Set<string>,
+    changedAccs: Set<string>,
+    changedLoans: Set<string>
+  ) => {
+    if (changedWallets.size > 0) {
+      setCashWallets(nextState.wallets);
+      changedWallets.forEach((owner) => {
+        const w = nextState.wallets.find((item) => item.owner === owner);
+        if (w) setDoc(doc(db, 'cash_wallets', owner), sanitizeForFirestore(w)).catch(() => {});
+      });
+    }
+    if (changedAccs.size > 0) {
+      setBankAccounts(nextState.accs);
+      changedAccs.forEach((id) => {
+        const acc = nextState.accs.find((item) => item.id === id);
+        if (acc) setDoc(doc(db, 'bank_accounts', id), sanitizeForFirestore(acc)).catch(() => {});
+      });
+    }
+    if (changedLoans.size > 0) {
+      setLoans(nextState.lns);
+      changedLoans.forEach((id) => {
+        const loan = nextState.lns.find((item) => item.id === id);
+        if (loan) setDoc(doc(db, 'loans', id), sanitizeForFirestore(loan)).catch(() => {});
+      });
     }
   };
 
@@ -765,14 +942,33 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       ...txData,
       id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       createdAt: new Date().toISOString(),
+      createdByDevice: deviceId,
       notes: txData.notes || '',
       category: txData.category || 'other',
       paymentMethod: txData.paymentMethod || 'bank',
       person: txData.person || currentUser,
     };
 
+    // Prevent self-notification when listener confirms the new doc
+    seenTxIdsRef.current.add(newTx.id);
+    persistSeenTxIds();
+
     // 1. Synchronous optimistic state & localStorage update
-    adjustBalances(newTx, 1);
+    const changedWallets = new Set<string>();
+    const changedAccs = new Set<string>();
+    const changedLoans = new Set<string>();
+    const nextBalances = applyTransactionDelta(
+      newTx,
+      1,
+      cashWallets,
+      bankAccounts,
+      loans,
+      changedWallets,
+      changedAccs,
+      changedLoans
+    );
+    commitBalanceChanges(nextBalances, changedWallets, changedAccs, changedLoans);
+
     setTransactions((prev) => {
       const next = [newTx, ...prev.filter((t) => t.id !== newTx.id)];
       try {
@@ -790,19 +986,41 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     return newTx;
   };
 
-  // Edit Transaction
+  // Edit Transaction (chained reverse + reapply so all 4 transaction types adjust balances cleanly)
   const editTransaction = (id: string, updated: Partial<Transaction>) => {
     const oldTx = transactions.find((t) => t.id === id);
     if (!oldTx) return;
-
-    adjustBalances(oldTx, -1);
 
     const modifiedTx: Transaction = {
       ...oldTx,
       ...updated,
     };
 
-    adjustBalances(modifiedTx, 1);
+    const changedWallets = new Set<string>();
+    const changedAccs = new Set<string>();
+    const changedLoans = new Set<string>();
+
+    const afterReverse = applyTransactionDelta(
+      oldTx,
+      -1,
+      cashWallets,
+      bankAccounts,
+      loans,
+      changedWallets,
+      changedAccs,
+      changedLoans
+    );
+    const afterApply = applyTransactionDelta(
+      modifiedTx,
+      1,
+      afterReverse.wallets,
+      afterReverse.accs,
+      afterReverse.lns,
+      changedWallets,
+      changedAccs,
+      changedLoans
+    );
+    commitBalanceChanges(afterApply, changedWallets, changedAccs, changedLoans);
 
     setTransactions((prev) => {
       const next = prev.map((t) => (t.id === id ? modifiedTx : t));
@@ -822,7 +1040,21 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   const deleteTransaction = (id: string) => {
     const tx = transactions.find((t) => t.id === id);
     if (tx) {
-      adjustBalances(tx, -1);
+      const changedWallets = new Set<string>();
+      const changedAccs = new Set<string>();
+      const changedLoans = new Set<string>();
+      const nextBalances = applyTransactionDelta(
+        tx,
+        -1,
+        cashWallets,
+        bankAccounts,
+        loans,
+        changedWallets,
+        changedAccs,
+        changedLoans
+      );
+      commitBalanceChanges(nextBalances, changedWallets, changedAccs, changedLoans);
+
       setTransactions((prev) => {
         const next = prev.filter((t) => t.id !== id);
         try {
@@ -856,14 +1088,31 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   // Bank Accounts Management
+  const defaultBankAccount = useMemo(
+    () => bankAccounts.find((a) => a.isDefault) || bankAccounts[0],
+    [bankAccounts]
+  );
+
   const addBankAccount = (accountData: Omit<BankAccount, 'id' | 'createdAt'>) => {
+    const shouldBeDefault = Boolean(accountData.isDefault) || bankAccounts.length === 0;
     const newAcc: BankAccount = {
       ...accountData,
+      isDefault: shouldBeDefault,
       id: `acc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       createdAt: getTodayISO(),
     };
     setBankAccounts((prev) => {
-      const next = [...prev.filter((a) => a.id !== newAcc.id), newAcc];
+      const base = shouldBeDefault
+        ? prev.map((a) => {
+            if (a.isDefault) {
+              const cleared = { ...a, isDefault: false };
+              setDoc(doc(db, 'bank_accounts', a.id), sanitizeForFirestore(cleared)).catch(() => {});
+              return cleared;
+            }
+            return a;
+          })
+        : prev;
+      const next = [...base.filter((a) => a.id !== newAcc.id), newAcc];
       try {
         localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(next));
       } catch {}
@@ -877,11 +1126,35 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   const editBankAccount = (id: string, updated: Partial<BankAccount>) => {
+    const makeDefault = updated.isDefault === true;
     setBankAccounts((prev) => {
       const next = prev.map((acc) => {
         if (acc.id === id) {
           const mod = { ...acc, ...updated };
           setDoc(doc(db, 'bank_accounts', id), sanitizeForFirestore(mod)).catch(() => {});
+          return mod;
+        }
+        if (makeDefault && acc.isDefault) {
+          const cleared = { ...acc, isDefault: false };
+          setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(cleared)).catch(() => {});
+          return cleared;
+        }
+        return acc;
+      });
+      try {
+        localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const setDefaultBankAccount = (id: string) => {
+    setBankAccounts((prev) => {
+      const next = prev.map((acc) => {
+        const shouldBe = acc.id === id;
+        if (Boolean(acc.isDefault) !== shouldBe) {
+          const mod = { ...acc, isDefault: shouldBe };
+          setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(mod)).catch(() => {});
           return mod;
         }
         return acc;
@@ -895,11 +1168,15 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const deleteBankAccount = (id: string) => {
     setBankAccounts((prev) => {
-      const next = prev.filter((acc) => acc.id !== id);
+      const filtered = prev.filter((acc) => acc.id !== id);
+      if (filtered.length > 0 && !filtered.some((a) => a.isDefault)) {
+        filtered[0] = { ...filtered[0], isDefault: true };
+        setDoc(doc(db, 'bank_accounts', filtered[0].id), sanitizeForFirestore(filtered[0])).catch(() => {});
+      }
       try {
-        localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(next));
+        localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(filtered));
       } catch {}
-      return next;
+      return filtered;
     });
     deleteDoc(doc(db, 'bank_accounts', id)).catch((err) => {
       console.warn('Failed to delete bank account in Firestore:', err);
@@ -907,7 +1184,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   // Loan Management
-  const addLoan = (loanData: Omit<Loan, 'id'>) => {
+  const addLoan = (loanData: Omit<Loan, 'id'>): Loan => {
     const newLoan: Loan = {
       ...loanData,
       id: `loan-${Date.now()}`,
@@ -923,6 +1200,8 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     setDoc(doc(db, 'loans', newLoan.id), sanitizeForFirestore(newLoan)).catch((err) => {
       console.warn('Failed to sync new loan to Firestore:', err);
     });
+
+    return newLoan;
   };
 
   const editLoan = (id: string, updated: Partial<Loan>) => {
@@ -1076,6 +1355,8 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     accountId,
     date,
     notes,
+    paymentFrequency,
+    interestAmount,
   }: {
     loanId: string;
     amount: number;
@@ -1084,13 +1365,21 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     accountId?: string;
     date: string;
     notes?: string;
+    paymentFrequency?: PaymentFrequency;
+    interestAmount?: number;
   }) => {
     const loan = loans.find((l) => l.id === loanId);
     const loanName = loan ? loan.name : 'Loan';
+    const freqLabel =
+      paymentFrequency === 'yearly'
+        ? 'Yearly'
+        : paymentFrequency === 'quarterly'
+        ? 'Quarterly'
+        : 'Monthly';
 
     addTransaction({
       type: 'emi_payment',
-      title: `${loanName} - EMI Installment`,
+      title: `${loanName} - ${loan?.type === 'gold_loan' ? `${freqLabel} Gold Loan Interest` : `${freqLabel} EMI`}`,
       amount,
       date,
       person: paidBy || currentUser,
@@ -1098,8 +1387,10 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       fromAccountId: paymentMethod === 'bank' ? accountId : undefined,
       fromCashPerson: paymentMethod === 'cash' ? (paidBy || currentUser) : undefined,
       loanId,
+      paymentFrequency,
+      interestAmount,
       category: loan?.type === 'home_loan' ? 'rent' : 'travel',
-      notes: notes || `Monthly EMI payment for ${loanName}`,
+      notes: notes || `${freqLabel} payment for ${loanName}`,
     });
   };
 
@@ -1358,6 +1649,50 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     localStorage.clear();
   };
 
+  // ==========================================
+  // EMI DUE DATE REMINDERS (5 DAYS BEFORE & DUE DATE @ 6 AM, 12 PM, 10 PM)
+  // ==========================================
+  useEffect(() => {
+    if (!notifyEmiReminders || loans.length === 0) return;
+
+    const runCheck = () => {
+      checkAndTriggerEmiReminders({
+        loans,
+        transactions,
+        enabled: notifyEmiReminders,
+        onInAppNotify: pushInAppNotificationRef.current,
+      });
+    };
+
+    runCheck();
+
+    const intervalId = window.setInterval(runCheck, 30000);
+    let slotTimeoutId: number | undefined;
+    const scheduleNextSlot = () => {
+      const waitMs = getMsUntilNextEmiSlot(new Date());
+      slotTimeoutId = window.setTimeout(() => {
+        runCheck();
+        scheduleNextSlot();
+      }, Math.min(waitMs + 1000, 2147483000));
+    };
+    scheduleNextSlot();
+
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        runCheck();
+      }
+    };
+    window.addEventListener('focus', onVisibilityOrFocus);
+    document.addEventListener('visibilitychange', onVisibilityOrFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      if (slotTimeoutId) window.clearTimeout(slotTimeoutId);
+      window.removeEventListener('focus', onVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus);
+    };
+  }, [loans, transactions, notifyEmiReminders]);
+
   return (
     <FinanceContext.Provider
       value={{
@@ -1383,6 +1718,17 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         categoryColors,
         categoryBudgets,
         isLiveSyncing,
+        defaultBankAccount,
+        deviceId,
+        notifyPartnerTransactions,
+        setNotifyPartnerTransactions,
+        notifyEmiReminders,
+        setNotifyEmiReminders,
+        notificationSoundEnabled,
+        setNotificationSoundEnabled,
+        inAppNotifications,
+        pushInAppNotification,
+        dismissInAppNotification,
         addTransaction,
         editTransaction,
         deleteTransaction,
@@ -1390,6 +1736,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         addBankAccount,
         editBankAccount,
         deleteBankAccount,
+        setDefaultBankAccount,
         addLoan,
         editLoan,
         deleteLoan,
