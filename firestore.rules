@@ -26,6 +26,9 @@ service cloud.firestore {
     match /category_colors/{document=**} {
       allow read, write: if true;
     }
+    match /daily_notes/{document=**} {
+      allow read, write: if true;
+    }
     match /{document=**} {
       allow read, write: if true;
     }

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { NavTab } from './Sidebar';
-import { Landmark, BarChart3, Target, Settings, Lock, LogOut, X, ChevronRight } from 'lucide-react';
+import { Landmark, BarChart3, Target, Settings, Lock, LogOut, X, ChevronRight, CalendarDays } from 'lucide-react';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 
 interface MoreMenuSheetProps {
@@ -22,6 +22,16 @@ export const MoreMenuSheet: React.FC<MoreMenuSheetProps> = ({
   if (!isOpen) return null;
 
   const menuItems = [
+    {
+      label: 'Daily Notes & Calendar',
+      desc: 'Daily matters, journey diary, birthdays & wedding reminders',
+      icon: CalendarDays,
+      color: 'bg-rose-50 text-rose-600',
+      onClick: () => {
+        onClose();
+        onSelectTab('notes');
+      },
+    },
     {
       label: 'Loans & EMIs',
       desc: 'Track loans and pay monthly EMIs',

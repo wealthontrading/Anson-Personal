@@ -5,6 +5,9 @@ import { CategoryDonutChart } from '../dashboard/CategoryDonutChart';
 import { CategoryBudgetProgressCard } from '../dashboard/CategoryBudgetProgressCard';
 import { DeleteConfirmModal } from '../common/DeleteConfirmModal';
 import {
+  doesNoteAppearOnDate,
+  formatReminderTime12h,
+  getDaysUntilNextNoteDate,
   getLoanFrequency,
   getLoanScheduledPaymentAmount,
   getNextDueDateForLoan,
@@ -12,17 +15,20 @@ import {
   isLoanCyclePaid,
   isNotificationSupported,
   requestNotificationPermission,
+  unlockNotificationAudio,
 } from '../../utils/notifications';
 import {
   formatDateDDMMYYYY,
   formatINR,
   formatMonthName,
   getCategoryColor,
+  getTodayISO,
   CATEGORY_DETAILS,
   INCOME_SOURCE_DETAILS,
 } from '../../utils/formatters';
 import {
   Calendar,
+  CalendarHeart,
   Landmark,
   ChevronRight,
   Plus,
@@ -34,6 +40,10 @@ import {
   Edit2,
   Trash2,
   Bell,
+  CheckCircle2,
+  Circle,
+  Cake,
+  Heart,
 } from 'lucide-react';
 import { Transaction } from '../../types/finance';
 import { NavTab } from '../navigation/Sidebar';
@@ -62,6 +72,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     selectedMonth,
     setSelectedMonth,
     loans,
+    dailyNotes,
+    toggleDailyNoteComplete,
     categoryColors,
     deleteTransaction,
   } = useFinance();
@@ -122,6 +134,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     currentSummary.totalIncome > 0
       ? Math.min(100, Math.round((currentSummary.totalExpenses / currentSummary.totalIncome) * 100))
       : 0;
+
+  // Today's notes & upcoming special dates (Birthdays, Wedding Dates, Events within 14 days)
+  const todayISO = getTodayISO();
+  const todayNotes = useMemo(() => {
+    return dailyNotes
+      .filter((note) => doesNoteAppearOnDate(note, todayISO))
+      .sort((a, b) => Number(a.completed) - Number(b.completed));
+  }, [dailyNotes, todayISO]);
+
+  const upcomingSpecialDates = useMemo(() => {
+    return dailyNotes
+      .filter((n) => n.type === 'birthday' || n.type === 'wedding' || n.type === 'special_date')
+      .map((note) => ({
+        note,
+        daysUntil: getDaysUntilNextNoteDate(note, today),
+      }))
+      .filter((item) => item.daysUntil >= 0 && item.daysUntil <= 14)
+      .sort((a, b) => a.daysUntil - b.daysUntil)
+      .slice(0, 3);
+  }, [dailyNotes, todayISO]);
 
   return (
     <div className="space-y-5 pb-6">
@@ -356,6 +388,122 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </div>
       )}
+
+      {/* Row 4c: Daily Notes, Doing Matters & Special Dates Shortcut */}
+      <section className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200/70 text-amber-600 flex items-center justify-center shrink-0">
+              <CalendarHeart className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm sm:text-base font-bold text-slate-900 truncate">
+                Daily Notes &amp; Calendar
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                {todayNotes.filter((n) => !n.completed).length > 0
+                  ? `${todayNotes.filter((n) => !n.completed).length} pending for today`
+                  : 'Track daily matters, birthdays & wedding dates'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onSelectTab('notes')}
+            className="min-h-[36px] px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold inline-flex items-center gap-1 shrink-0 transition cursor-pointer"
+          >
+            <span>Open Calendar</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {upcomingSpecialDates.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {upcomingSpecialDates.map(({ note, daysUntil }) => {
+              const isBirthday = note.type === 'birthday';
+              const isWedding = note.type === 'wedding';
+              return (
+                <button
+                  key={note.id}
+                  type="button"
+                  onClick={() => onSelectTab('notes')}
+                  className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer ${
+                    isBirthday
+                      ? 'bg-pink-50/90 border-pink-200/80 text-pink-800 hover:bg-pink-100/70'
+                      : isWedding
+                      ? 'bg-rose-50/90 border-rose-200/80 text-rose-800 hover:bg-rose-100/70'
+                      : 'bg-amber-50/90 border-amber-200/80 text-amber-900 hover:bg-amber-100/70'
+                  }`}
+                >
+                  {isBirthday ? (
+                    <Cake className="w-3.5 h-3.5 shrink-0" />
+                  ) : isWedding ? (
+                    <Heart className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <Calendar className="w-3.5 h-3.5 shrink-0" />
+                  )}
+                  <span className="truncate max-w-[160px]">{note.title}</span>
+                  <span className="opacity-75">
+                    · {daysUntil === 0 ? 'Today!' : daysUntil === 1 ? 'Tomorrow' : `in ${daysUntil}d`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {todayNotes.length > 0 ? (
+          <div className="divide-y divide-slate-100 border-t border-slate-100 pt-1">
+            {todayNotes.slice(0, 3).map((note) => (
+              <div
+                key={note.id}
+                className="py-2.5 flex items-center justify-between gap-2.5"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    void unlockNotificationAudio();
+                    toggleDailyNoteComplete(note.id);
+                  }}
+                  className="flex items-center gap-2.5 min-w-0 text-left flex-1 cursor-pointer group"
+                >
+                  {note.completed ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  ) : (
+                    <Circle className="w-5 h-5 text-slate-300 group-hover:text-emerald-500 shrink-0 transition" />
+                  )}
+                  <div className="min-w-0">
+                    <p
+                      className={`text-xs sm:text-sm font-bold truncate ${
+                        note.completed ? 'line-through text-slate-400' : 'text-slate-900'
+                      }`}
+                    >
+                      {note.title}
+                    </p>
+                    <p className="text-[11px] text-slate-500 truncate">
+                      {note.reminderEnabled && note.reminderTime
+                        ? `Reminder ${formatReminderTime12h(note.reminderTime)}`
+                        : 'Today'}
+                      {' · '}
+                      {note.person}
+                    </p>
+                  </div>
+                </button>
+                {note.completed && (
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg shrink-0">
+                    Done
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">
+            No tasks scheduled for today. Open Calendar to log your daily journey, doing matters, birthdays, or wedding dates with phone reminders.
+          </p>
+        )}
+      </section>
 
       {/* Row 5: Recent Activity (Clean Mobile Tap Rows) */}
       <section className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5">

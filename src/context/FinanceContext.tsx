@@ -4,6 +4,7 @@ import {
   CashWallet,
   CategoryBudget,
   CustomCategory,
+  DailyNote,
   DashboardView,
   FinancialSummary,
   Loan,
@@ -25,6 +26,9 @@ import { getCurrentMonthStr, getTodayISO } from '../utils/formatters';
 import {
   AppNotificationPayload,
   checkAndTriggerEmiReminders,
+  checkAndTriggerNoteReminders,
+  formatNewNoteNotification,
+  formatNoteCompletedNotification,
   formatTransactionNotification,
   getMsUntilNextEmiSlot,
   getOrCreateDeviceId,
@@ -85,6 +89,7 @@ interface FinanceContextType {
   customCategories: CustomCategory[];
   categoryColors: Record<string, string>;
   categoryBudgets: CategoryBudget[];
+  dailyNotes: DailyNote[];
   isLiveSyncing: boolean;
   defaultBankAccount: BankAccount | undefined;
 
@@ -94,6 +99,8 @@ interface FinanceContextType {
   setNotifyPartnerTransactions: (enabled: boolean) => void;
   notifyEmiReminders: boolean;
   setNotifyEmiReminders: (enabled: boolean) => void;
+  notifyNoteReminders: boolean;
+  setNotifyNoteReminders: (enabled: boolean) => void;
   notificationSoundEnabled: boolean;
   setNotificationSoundEnabled: (enabled: boolean) => void;
   inAppNotifications: AppNotificationPayload[];
@@ -114,6 +121,11 @@ interface FinanceContextType {
   addLoan: (loan: Omit<Loan, 'id'>) => Loan;
   editLoan: (id: string, updated: Partial<Loan>) => void;
   deleteLoan: (id: string) => void;
+
+  addDailyNote: (note: Omit<DailyNote, 'id' | 'createdAt'>) => DailyNote;
+  editDailyNote: (id: string, updated: Partial<DailyNote>) => void;
+  deleteDailyNote: (id: string) => void;
+  toggleDailyNoteComplete: (id: string) => void;
 
   addCustomCategory: (name: string, type: 'expense' | 'income', color?: string) => CustomCategory;
   setCategoryColor: (category: string, color: string) => void;
@@ -169,9 +181,11 @@ const STORAGE_KEYS = {
   CUSTOM_CATEGORIES: 'anson_dona_custom_categories_v6_safe',
   CATEGORY_COLORS: 'anson_dona_category_colors_v7',
   BUDGETS: 'anson_dona_budgets_v6_safe',
+  DAILY_NOTES: 'anson_dona_daily_notes_v1',
   IS_LOGGED_IN: 'anson_dona_is_logged_in_v6_safe',
   NOTIFY_PARTNER: 'anson_dona_notify_partner_v1',
   NOTIFY_EMI: 'anson_dona_notify_emi_v1',
+  NOTIFY_NOTES: 'anson_dona_notify_notes_v1',
   SEEN_TX_IDS: 'anson_dona_seen_tx_ids_v1',
 };
 
@@ -237,12 +251,24 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   });
 
+  const [notifyNoteReminders, setNotifyNoteRemindersState] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.NOTIFY_NOTES);
+      return stored === null ? true : stored === 'true';
+    } catch {
+      return true;
+    }
+  });
+
   const [notificationSoundEnabled, setNotificationSoundEnabledState] = useState<boolean>(() =>
     isNotificationSoundEnabled()
   );
 
   const notifyPartnerRef = useRef<boolean>(notifyPartnerTransactions);
   notifyPartnerRef.current = notifyPartnerTransactions;
+
+  const notifyNoteRemindersRef = useRef<boolean>(notifyNoteReminders);
+  notifyNoteRemindersRef.current = notifyNoteReminders;
 
   const setNotifyPartnerTransactions = (enabled: boolean) => {
     setNotifyPartnerTransactionsState(enabled);
@@ -256,6 +282,14 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     setNotifyEmiRemindersState(enabled);
     try {
       localStorage.setItem(STORAGE_KEYS.NOTIFY_EMI, String(enabled));
+    } catch {}
+  };
+
+  const setNotifyNoteReminders = (enabled: boolean) => {
+    setNotifyNoteRemindersState(enabled);
+    notifyNoteRemindersRef.current = enabled;
+    try {
+      localStorage.setItem(STORAGE_KEYS.NOTIFY_NOTES, String(enabled));
     } catch {}
   };
 
@@ -391,6 +425,19 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   });
 
+  // 9. Daily Notes, Tasks & Calendar Special Dates
+  const [dailyNotes, setDailyNotes] = useState<DailyNote[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.DAILY_NOTES);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const seenNoteIdsRef = useRef<Set<string>>(new Set());
+  const prevNoteCompletedMapRef = useRef<Map<string, boolean>>(new Map());
+
   // Sync state to localStorage as fast client-side cache
   useEffect(() => {
     try {
@@ -445,6 +492,12 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       localStorage.setItem(STORAGE_KEYS.CATEGORY_COLORS, JSON.stringify(categoryColors));
     } catch {}
   }, [categoryColors]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.DAILY_NOTES, JSON.stringify(dailyNotes));
+    } catch {}
+  }, [dailyNotes]);
 
   useEffect(() => {
     try {
@@ -698,6 +751,75 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         }
       );
       unsubs.push(unsubColors);
+
+      // 9. Daily Notes & Calendar Events Live Listener (with cross-phone alerts for new & completed notes)
+      let isFirstNotesSnapshot = true;
+      const unsubNotes = onSnapshot(
+        collection(db, 'daily_notes'),
+        (snapshot) => {
+          const liveNotes: DailyNote[] = [];
+          snapshot.forEach((docSnap) => {
+            const note = { ...docSnap.data(), id: docSnap.id } as DailyNote;
+            liveNotes.push(note);
+            if (isFirstNotesSnapshot) {
+              seenNoteIdsRef.current.add(note.id);
+              prevNoteCompletedMapRef.current.set(note.id, Boolean(note.completed));
+            }
+          });
+          liveNotes.sort(
+            (a, b) =>
+              (b.date || '').localeCompare(a.date || '') ||
+              (b.createdAt || '').localeCompare(a.createdAt || '')
+          );
+          setDailyNotes(liveNotes);
+          try {
+            localStorage.setItem(STORAGE_KEYS.DAILY_NOTES, JSON.stringify(liveNotes));
+          } catch {}
+
+          if (!isFirstNotesSnapshot) {
+            snapshot.docChanges().forEach((change) => {
+              const note = { ...change.doc.data(), id: change.doc.id } as DailyNote;
+              if (change.type === 'added') {
+                const alreadySeen = seenNoteIdsRef.current.has(note.id);
+                seenNoteIdsRef.current.add(note.id);
+                prevNoteCompletedMapRef.current.set(note.id, Boolean(note.completed));
+                if (!alreadySeen && note.createdByDevice !== deviceId && notifyNoteRemindersRef.current) {
+                  const { title, body } = formatNewNoteNotification(note);
+                  showPhoneNotification({
+                    title,
+                    body,
+                    tag: `note-new-${note.id}`,
+                    kind: 'note_reminder',
+                    onInAppNotify: pushInAppNotificationRef.current,
+                  });
+                }
+              } else if (change.type === 'modified') {
+                const wasCompleted = prevNoteCompletedMapRef.current.get(note.id) || false;
+                const isNowCompleted = Boolean(note.completed);
+                prevNoteCompletedMapRef.current.set(note.id, isNowCompleted);
+
+                if (!wasCompleted && isNowCompleted && note.updatedByDevice !== deviceId && notifyNoteRemindersRef.current) {
+                  const { title, body } = formatNoteCompletedNotification(note, note.completedBy || note.person);
+                  showPhoneNotification({
+                    title,
+                    body,
+                    tag: `note-done-${note.id}`,
+                    kind: 'note_completed',
+                    onInAppNotify: pushInAppNotificationRef.current,
+                  });
+                }
+              } else if (change.type === 'removed') {
+                prevNoteCompletedMapRef.current.delete(note.id);
+              }
+            });
+          }
+          isFirstNotesSnapshot = false;
+        },
+        (error) => {
+          console.warn('Firestore live daily notes sync error:', error);
+        }
+      );
+      unsubs.push(unsubNotes);
     } catch (err) {
       console.warn('Failed to attach Firestore listeners:', err);
     }
@@ -1234,6 +1356,115 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     });
   };
 
+  // Daily Notes, Tasks & Calendar Special Dates Management
+  const addDailyNote = (noteData: Omit<DailyNote, 'id' | 'createdAt'>): DailyNote => {
+    const nowIso = new Date().toISOString();
+    const newNote: DailyNote = {
+      ...noteData,
+      id: `note-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      createdByDevice: deviceId,
+      updatedByDevice: deviceId,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+
+    seenNoteIdsRef.current.add(newNote.id);
+    prevNoteCompletedMapRef.current.set(newNote.id, Boolean(newNote.completed));
+
+    setDailyNotes((prev) => {
+      const next = [newNote, ...prev.filter((n) => n.id !== newNote.id)];
+      try {
+        localStorage.setItem(STORAGE_KEYS.DAILY_NOTES, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    setDoc(doc(db, 'daily_notes', newNote.id), sanitizeForFirestore(newNote)).catch((err) => {
+      console.warn('Failed to sync new daily note to Firestore:', err);
+    });
+
+    return newNote;
+  };
+
+  const editDailyNote = (id: string, updated: Partial<DailyNote>) => {
+    setDailyNotes((prev) => {
+      const next = prev.map((n) => {
+        if (n.id === id) {
+          const mod: DailyNote = {
+            ...n,
+            ...updated,
+            updatedByDevice: deviceId,
+            updatedAt: new Date().toISOString(),
+          };
+          prevNoteCompletedMapRef.current.set(id, Boolean(mod.completed));
+          setDoc(doc(db, 'daily_notes', id), sanitizeForFirestore(mod)).catch(() => {});
+          return mod;
+        }
+        return n;
+      });
+      try {
+        localStorage.setItem(STORAGE_KEYS.DAILY_NOTES, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const deleteDailyNote = (id: string) => {
+    prevNoteCompletedMapRef.current.delete(id);
+    setDailyNotes((prev) => {
+      const next = prev.filter((n) => n.id !== id);
+      try {
+        localStorage.setItem(STORAGE_KEYS.DAILY_NOTES, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    deleteDoc(doc(db, 'daily_notes', id)).catch((err) => {
+      console.warn('Failed to delete daily note in Firestore:', err);
+    });
+  };
+
+  const toggleDailyNoteComplete = (id: string) => {
+    const target = dailyNotes.find((n) => n.id === id);
+    if (!target) return;
+
+    const nextCompleted = !target.completed;
+    const nowIso = new Date().toISOString();
+    const updatedNote: DailyNote = {
+      ...target,
+      completed: nextCompleted,
+      completedAt: nextCompleted ? nowIso : undefined,
+      completedBy: nextCompleted ? currentUser : undefined,
+      updatedByDevice: deviceId,
+      updatedAt: nowIso,
+    };
+
+    prevNoteCompletedMapRef.current.set(id, nextCompleted);
+
+    setDailyNotes((prev) => {
+      const next = prev.map((n) => (n.id === id ? updatedNote : n));
+      try {
+        localStorage.setItem(STORAGE_KEYS.DAILY_NOTES, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    setDoc(doc(db, 'daily_notes', id), sanitizeForFirestore(updatedNote)).catch((err) => {
+      console.warn('Failed to sync completed daily note to Firestore:', err);
+    });
+
+    // Send instant phone notification with celebratory chime when completed!
+    if (nextCompleted && notifyNoteRemindersRef.current) {
+      const { title, body } = formatNoteCompletedNotification(updatedNote, currentUser);
+      void showPhoneNotification({
+        title,
+        body,
+        tag: `note-done-local-${id}-${Date.now()}`,
+        kind: 'note_completed',
+        onInAppNotify: pushInAppNotificationRef.current,
+      });
+    }
+  };
+
   // Custom Categories
   const setCategoryColor = (category: string, color: string) => {
     const cleanCat = category.toLowerCase().trim();
@@ -1536,13 +1767,14 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   // Export & Import
   const exportBackupJSON = () => {
     const backupData = {
-      version: '3.0',
+      version: '3.1',
       exportedAt: new Date().toISOString(),
       bankAccounts,
       cashWallets,
       loans,
       transactions,
       customCategories,
+      dailyNotes,
       users,
     };
     const blob = new Blob([JSON.stringify(backupData, null, 2)], {
@@ -1559,7 +1791,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   const importBackupJSON = (jsonStr: string): boolean => {
     try {
       const data = JSON.parse(jsonStr);
-      if (Array.isArray(data.transactions) || Array.isArray(data.bankAccounts)) {
+      if (Array.isArray(data.transactions) || Array.isArray(data.bankAccounts) || Array.isArray(data.dailyNotes)) {
         if (data.bankAccounts) {
           setBankAccounts(data.bankAccounts);
           data.bankAccounts.forEach((acc: BankAccount) => setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(acc)).catch(() => {}));
@@ -1579,6 +1811,10 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         if (data.customCategories) {
           setCustomCategories(data.customCategories);
           data.customCategories.forEach((c: CustomCategory) => setDoc(doc(db, 'custom_categories', c.id), sanitizeForFirestore(c)).catch(() => {}));
+        }
+        if (data.dailyNotes) {
+          setDailyNotes(data.dailyNotes);
+          data.dailyNotes.forEach((n: DailyNote) => setDoc(doc(db, 'daily_notes', n.id), sanitizeForFirestore(n)).catch(() => {}));
         }
         if (data.users) setUsers(data.users);
         return true;
@@ -1635,6 +1871,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     bankAccounts.forEach((a) => deleteDoc(doc(db, 'bank_accounts', a.id)).catch(() => {}));
     loans.forEach((l) => deleteDoc(doc(db, 'loans', l.id)).catch(() => {}));
     customCategories.forEach((c) => deleteDoc(doc(db, 'custom_categories', c.id)).catch(() => {}));
+    dailyNotes.forEach((n) => deleteDoc(doc(db, 'daily_notes', n.id)).catch(() => {}));
 
     setDoc(doc(db, 'cash_wallets', 'Anson'), { owner: 'Anson', balance: 0, lastUpdated: getTodayISO() }).catch(() => {});
     setDoc(doc(db, 'cash_wallets', 'Dona'), { owner: 'Dona', balance: 0, lastUpdated: getTodayISO() }).catch(() => {});
@@ -1644,6 +1881,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     setLoans(INITIAL_LOANS);
     setTransactions(INITIAL_TRANSACTIONS);
     setCustomCategories([]);
+    setDailyNotes([]);
     setUsers(INITIAL_USERS);
     setActiveDashboard('Family');
     localStorage.clear();
@@ -1693,6 +1931,38 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     };
   }, [loans, transactions, notifyEmiReminders]);
 
+  // ==========================================
+  // DAILY NOTES, TASKS, BIRTHDAYS & WEDDING DATE REMINDERS
+  // ==========================================
+  useEffect(() => {
+    if (!notifyNoteReminders || dailyNotes.length === 0) return;
+
+    const runNoteCheck = () => {
+      checkAndTriggerNoteReminders({
+        notes: dailyNotes,
+        enabled: notifyNoteReminders,
+        onInAppNotify: pushInAppNotificationRef.current,
+      });
+    };
+
+    runNoteCheck();
+    const intervalId = window.setInterval(runNoteCheck, 30000);
+
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        runNoteCheck();
+      }
+    };
+    window.addEventListener('focus', onVisibilityOrFocus);
+    document.addEventListener('visibilitychange', onVisibilityOrFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', onVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus);
+    };
+  }, [dailyNotes, notifyNoteReminders]);
+
   return (
     <FinanceContext.Provider
       value={{
@@ -1717,6 +1987,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         customCategories,
         categoryColors,
         categoryBudgets,
+        dailyNotes,
         isLiveSyncing,
         defaultBankAccount,
         deviceId,
@@ -1724,6 +1995,8 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         setNotifyPartnerTransactions,
         notifyEmiReminders,
         setNotifyEmiReminders,
+        notifyNoteReminders,
+        setNotifyNoteReminders,
         notificationSoundEnabled,
         setNotificationSoundEnabled,
         inAppNotifications,
@@ -1740,6 +2013,10 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         addLoan,
         editLoan,
         deleteLoan,
+        addDailyNote,
+        editDailyNote,
+        deleteDailyNote,
+        toggleDailyNoteComplete,
         addCustomCategory,
         setCategoryColor,
         setCategoryBudget,

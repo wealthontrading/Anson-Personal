@@ -21,7 +21,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onOpenQuickAction,
   onOpenMoreMenu,
 }) => {
-  const isMoreActive = currentTab === 'emis' || currentTab === 'reports' || currentTab === 'settings';
+  const isMoreActive =
+    currentTab === 'emis' || currentTab === 'notes' || currentTab === 'reports' || currentTab === 'settings';
 
   return (
     <nav

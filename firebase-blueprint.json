@@ -136,12 +136,41 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["id", "category", "monthlyLimit"]
+    },
+    "daily_notes": {
+      "title": "Daily Note & Calendar Event",
+      "description": "Daily doing matters, journey journal notes, birthdays, wedding dates, and special reminders",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "type": { "type": "string", "enum": ["task", "journal", "birthday", "wedding", "special_date"] },
+        "date": { "type": "string" },
+        "reminderTime": { "type": "string" },
+        "reminderEnabled": { "type": "boolean" },
+        "remindDaysBefore": { "type": "number" },
+        "repeatYearly": { "type": "boolean" },
+        "completed": { "type": "boolean" },
+        "completedAt": { "type": "string" },
+        "completedBy": { "type": "string", "enum": ["Anson", "Dona"] },
+        "person": { "type": "string", "enum": ["Anson", "Dona"] },
+        "createdByDevice": { "type": "string" },
+        "updatedByDevice": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "type", "date", "reminderEnabled", "completed", "person"]
     }
   },
   "firestore": {
     "/category_budgets/{budgetId}": {
       "schema": { "$ref": "#/entities/category_budgets" },
       "description": "Monthly spending limits for expense categories"
+    },
+    "/daily_notes/{noteId}": {
+      "schema": { "$ref": "#/entities/daily_notes" },
+      "description": "Daily notes, tasks, journey entries, birthdays, wedding dates and reminders"
     }
   }
 }

@@ -1,4 +1,4 @@
-import { Loan, PaymentFrequency, Transaction } from '../types/finance';
+import { DailyNote, Loan, PaymentFrequency, Person, Transaction } from '../types/finance';
 import { CATEGORY_DETAILS, INCOME_SOURCE_DETAILS, formatDateDDMMYYYY, formatINR } from './formatters';
 
 export type EmiReminderSlotId = '06:00' | '12:00' | '22:00';
@@ -16,16 +16,24 @@ export const EMI_REMINDER_SLOTS: EmiReminderSlot[] = [
   { id: '22:00', hour: 22, minute: 0, label: '10:00 PM' },
 ];
 
+export type AppNotificationKind =
+  | 'transaction'
+  | 'emi_reminder'
+  | 'note_reminder'
+  | 'note_completed'
+  | 'system';
+
 export interface AppNotificationPayload {
   id: string;
   title: string;
   body: string;
-  kind: 'transaction' | 'emi_reminder' | 'system';
+  kind: AppNotificationKind;
   createdAt: number;
 }
 
 const DEVICE_ID_KEY = 'anson_dona_device_id_v1';
 const EMI_REMINDER_LOG_KEY = 'anson_dona_emi_slot_log_v1';
+const NOTE_REMINDER_LOG_KEY = 'anson_dona_note_rem_log_v1';
 const SOUND_ENABLED_KEY = 'anson_dona_notif_sound_v1';
 
 // ==========================================
@@ -91,7 +99,7 @@ if (typeof window !== 'undefined') {
 }
 
 export async function playNotificationSound(
-  kind: 'transaction' | 'emi_reminder' | 'system' = 'system',
+  kind: AppNotificationKind = 'system',
   forcePlay = false
 ): Promise<void> {
   if (!forcePlay && !isNotificationSoundEnabled()) return;
@@ -114,6 +122,20 @@ export async function playNotificationSound(
             { freq: 783.99, delay: 0, duration: 0.28, gain: 0.14 },
             { freq: 987.77, delay: 0.12, duration: 0.3, gain: 0.14 },
             { freq: 1174.66, delay: 0.24, duration: 0.48, gain: 0.16 },
+          ]
+        : kind === 'note_completed'
+        ? [
+            // Bright celebratory completion chime: C6 -> E6 -> G6
+            { freq: 1046.5, delay: 0, duration: 0.2, gain: 0.14 },
+            { freq: 1318.51, delay: 0.09, duration: 0.22, gain: 0.14 },
+            { freq: 1567.98, delay: 0.18, duration: 0.45, gain: 0.16 },
+          ]
+        : kind === 'note_reminder'
+        ? [
+            // Warm calendar reminder bell: F5 -> A5 -> C6
+            { freq: 698.46, delay: 0, duration: 0.25, gain: 0.14 },
+            { freq: 880.0, delay: 0.12, duration: 0.28, gain: 0.14 },
+            { freq: 1046.5, delay: 0.24, duration: 0.45, gain: 0.15 },
           ]
         : kind === 'transaction'
         ? [
@@ -202,7 +224,7 @@ export async function showPhoneNotification(options: {
   title: string;
   body: string;
   tag?: string;
-  kind?: 'transaction' | 'emi_reminder' | 'system';
+  kind?: AppNotificationKind;
   onInAppNotify?: (payload: AppNotificationPayload) => void;
 }): Promise<void> {
   const { title, body, tag, kind = 'system', onInAppNotify } = options;
@@ -616,6 +638,244 @@ export async function checkAndTriggerEmiReminders(params: {
 
   if (sentCount > 0) {
     writeEmiLog(log, todayISO);
+  }
+
+  return sentCount;
+}
+
+// ==========================================
+// DAILY NOTES, JOURNEY & SPECIAL DATE REMINDERS
+// ==========================================
+
+export function formatReminderTime12h(time24?: string): string {
+  if (!time24 || !time24.includes(':')) return '';
+  const [hStr, mStr] = time24.split(':');
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  if (isNaN(h) || isNaN(m)) return time24;
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${suffix}`;
+}
+
+export function doesNoteAppearOnDate(note: DailyNote, dateISO: string): boolean {
+  if (!note.date || !dateISO) return false;
+  if (note.date === dateISO) return true;
+  if (note.repeatYearly || note.type === 'birthday' || note.type === 'wedding') {
+    const noteParts = note.date.split('-');
+    const targetParts = dateISO.split('-');
+    if (noteParts.length === 3 && targetParts.length === 3) {
+      // Handle Feb 29 on non-leap years as Feb 28
+      if (noteParts[1] === '02' && noteParts[2] === '29') {
+        const y = parseInt(targetParts[0], 10);
+        const isLeap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+        if (!isLeap && targetParts[1] === '02' && targetParts[2] === '28') {
+          return true;
+        }
+      }
+      return noteParts[1] === targetParts[1] && noteParts[2] === targetParts[2];
+    }
+  }
+  return false;
+}
+
+export function getNextOccurrenceForNote(note: DailyNote, now: Date = new Date()): Date | null {
+  const parsed = parseLocalDateISO(note.date);
+  if (!parsed) return null;
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const isYearly = Boolean(note.repeatYearly || note.type === 'birthday' || note.type === 'wedding');
+  if (!isYearly) {
+    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  }
+
+  const month = parsed.getMonth();
+  const day = parsed.getDate();
+
+  const buildForYear = (yr: number) => {
+    const daysInMonth = new Date(yr, month + 1, 0).getDate();
+    return new Date(yr, month, Math.min(day, daysInMonth));
+  };
+
+  let candidate = buildForYear(now.getFullYear());
+  if (candidate.getTime() < todayMidnight.getTime()) {
+    candidate = buildForYear(now.getFullYear() + 1);
+  }
+  return candidate;
+}
+
+export function getDaysUntilNextNoteDate(note: DailyNote, now: Date = new Date()): number {
+  const nextDt = getNextOccurrenceForNote(note, now);
+  if (!nextDt) return 9999;
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((nextDt.getTime() - todayMidnight.getTime()) / 86400000);
+}
+
+export function getYearsCountForNote(note: DailyNote, referenceDate: Date = new Date()): number | null {
+  const parsed = parseLocalDateISO(note.date);
+  if (!parsed) return null;
+  const diff = referenceDate.getFullYear() - parsed.getFullYear();
+  return diff > 0 ? diff : null;
+}
+
+export function formatNoteCompletedNotification(
+  note: DailyNote,
+  completedBy: Person
+): { title: string; body: string } {
+  const label =
+    note.type === 'birthday'
+      ? 'Birthday'
+      : note.type === 'wedding'
+      ? 'Wedding Event'
+      : note.type === 'special_date'
+      ? 'Event'
+      : note.type === 'journal'
+      ? 'Daily Note'
+      : 'Task';
+
+  return {
+    title: `${label} Completed by ${completedBy}`,
+    body: `${note.title}${note.date ? ` (${formatDateDDMMYYYY(note.date)})` : ''} is marked done!`,
+  };
+}
+
+export function formatNewNoteNotification(note: DailyNote): { title: string; body: string } {
+  const label =
+    note.type === 'birthday'
+      ? 'Birthday Reminder'
+      : note.type === 'wedding'
+      ? 'Wedding Date'
+      : note.type === 'special_date'
+      ? 'Special Date'
+      : note.type === 'journal'
+      ? 'Daily Journey Note'
+      : 'Daily Task';
+
+  return {
+    title: `New ${label} added by ${note.person}`,
+    body: `${note.title} — ${formatDateDDMMYYYY(note.date)}${
+      note.reminderTime ? ` at ${formatReminderTime12h(note.reminderTime)}` : ''
+    }`,
+  };
+}
+
+function readNoteLog(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(NOTE_REMINDER_LOG_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeNoteLog(log: Record<string, number>, todayISO: string): void {
+  try {
+    const pruned: Record<string, number> = {};
+    for (const [k, v] of Object.entries(log)) {
+      if (k.endsWith(`_${todayISO}`)) {
+        pruned[k] = v;
+      }
+    }
+    localStorage.setItem(NOTE_REMINDER_LOG_KEY, JSON.stringify(pruned));
+  } catch {}
+}
+
+export async function checkAndTriggerNoteReminders(params: {
+  notes: DailyNote[];
+  enabled: boolean;
+  onInAppNotify?: (payload: AppNotificationPayload) => void;
+}): Promise<number> {
+  const { notes, enabled, onInAppNotify } = params;
+  if (!enabled || notes.length === 0) return 0;
+
+  const now = new Date();
+  const todayISO = getLocalTodayISO(now);
+  const currentMins = now.getHours() * 60 + now.getMinutes();
+  const log = readNoteLog();
+  let sentCount = 0;
+
+  for (const note of notes) {
+    if (!note.reminderEnabled) continue;
+
+    const isYearlySpecial = Boolean(
+      note.repeatYearly || note.type === 'birthday' || note.type === 'wedding'
+    );
+    // Completed one-time tasks don't keep reminding; yearly special dates always remind every year
+    if (note.completed && !isYearlySpecial) continue;
+
+    const nextDt = getNextOccurrenceForNote(note, now);
+    if (!nextDt) continue;
+
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffDays = Math.round((nextDt.getTime() - todayMidnight.getTime()) / 86400000);
+    const leadDays = typeof note.remindDaysBefore === 'number' ? note.remindDaysBefore : isYearlySpecial ? 1 : 0;
+
+    if (diffDays < 0 || diffDays > leadDays) continue;
+
+    // Check configured reminder time (default 08:00 for special dates, 09:00 for tasks/notes)
+    const defaultTime = isYearlySpecial ? '08:00' : '09:00';
+    const timeStr = note.reminderTime || defaultTime;
+    const [hStr, mStr] = timeStr.split(':');
+    const targetMins = (parseInt(hStr, 10) || 8) * 60 + (parseInt(mStr, 10) || 0);
+    if (currentMins < targetMins) continue;
+
+    const dedupKey = `${note.id}_${todayISO}`;
+    if (log[dedupKey]) continue;
+
+    log[dedupKey] = Date.now();
+    sentCount += 1;
+
+    const nextDateFormatted = formatDateDDMMYYYY(formatDateToISO(nextDt));
+    const yearsCount = isYearlySpecial ? getYearsCountForNote(note, nextDt) : null;
+
+    let title = '';
+    let body = '';
+
+    if (note.type === 'birthday') {
+      title =
+        diffDays === 0
+          ? `Birthday Today: ${note.title}`
+          : `Upcoming Birthday in ${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
+      body =
+        diffDays === 0
+          ? `Wish ${note.title} a happy birthday today!${yearsCount ? ` (${yearsCount} years)` : ''}`
+          : `${note.title} is on ${nextDateFormatted}${yearsCount ? ` (${yearsCount} years)` : ''}.`;
+    } else if (note.type === 'wedding') {
+      title =
+        diffDays === 0
+          ? `Wedding Anniversary Today: ${note.title}`
+          : `Wedding Date in ${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
+      body =
+        diffDays === 0
+          ? `Happy Anniversary! ${note.title}${yearsCount ? ` — ${yearsCount} years` : ''}.`
+          : `${note.title} is on ${nextDateFormatted}${yearsCount ? ` (${yearsCount} years)` : ''}.`;
+    } else if (note.type === 'special_date') {
+      title =
+        diffDays === 0
+          ? `Special Date Today: ${note.title}`
+          : `Upcoming Event in ${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
+      body = `${note.title} — ${nextDateFormatted}${note.content ? ` · ${note.content}` : ''}`;
+    } else {
+      title =
+        diffDays === 0
+          ? `Daily Reminder: ${note.title}`
+          : `Upcoming Task in ${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
+      body = note.content
+        ? `${note.content} (${nextDateFormatted})`
+        : `Scheduled for ${nextDateFormatted}${note.reminderTime ? ` at ${formatReminderTime12h(note.reminderTime)}` : ''}.`;
+    }
+
+    await showPhoneNotification({
+      title,
+      body,
+      tag: `note-${dedupKey}`,
+      kind: 'note_reminder',
+      onInAppNotify,
+    });
+  }
+
+  if (sentCount > 0) {
+    writeNoteLog(log, todayISO);
   }
 
   return sentCount;

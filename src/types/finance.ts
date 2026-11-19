@@ -166,3 +166,26 @@ export interface CategoryBudget {
   updatedAt?: string;
 }
 
+export type NoteType = 'task' | 'journal' | 'birthday' | 'wedding' | 'special_date';
+
+export interface DailyNote {
+  id: string;
+  title: string;
+  content?: string;
+  type: NoteType;
+  date: string; // YYYY-MM-DD
+  reminderTime?: string; // HH:MM (24-hour)
+  reminderEnabled: boolean;
+  remindDaysBefore?: number; // 0, 1, 3, 5
+  repeatYearly?: boolean;
+  completed: boolean;
+  completedAt?: string;
+  completedBy?: Person;
+  person: Person;
+  createdByDevice?: string;
+  updatedByDevice?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+

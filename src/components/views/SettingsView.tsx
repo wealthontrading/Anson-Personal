@@ -25,6 +25,7 @@ import {
   Bell,
   Clock,
   Volume2,
+  CalendarHeart,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -45,6 +46,8 @@ export const SettingsView: React.FC = () => {
     setNotifyPartnerTransactions,
     notifyEmiReminders,
     setNotifyEmiReminders,
+    notifyNoteReminders,
+    setNotifyNoteReminders,
     notificationSoundEnabled,
     setNotificationSoundEnabled,
     pushInAppNotification,
@@ -216,6 +219,28 @@ export const SettingsView: React.FC = () => {
               className="w-5 h-5 accent-indigo-600 rounded cursor-pointer shrink-0"
             />
           </label>
+
+          {/* Daily Notes, Birthdays & Task Completion Notification Toggle */}
+          <label className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 cursor-pointer">
+            <div>
+              <div className="flex items-center gap-1.5">
+                <CalendarHeart className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <p className="text-xs font-bold text-slate-900">
+                  Daily Notes, Birthdays &amp; Task Completion Alerts
+                </p>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Sends phone reminders for daily matters, birthdays &amp; wedding dates, and alerts both phones when a task or note is completed.
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={notifyNoteReminders}
+              onChange={(e) => setNotifyNoteReminders(e.target.checked)}
+              className="w-5 h-5 accent-amber-600 rounded cursor-pointer shrink-0"
+            />
+          </label>
+
           {/* Notification Sound Toggle */}
           <label className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 cursor-pointer">
             <div>
@@ -290,6 +315,27 @@ export const SettingsView: React.FC = () => {
             className="min-h-[38px] px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition cursor-pointer"
           >
             Test EMI Reminder
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              await unlockNotificationAudio();
+              if (notifPermission === 'default') {
+                const res = await requestNotificationPermission();
+                setNotifPermission(res);
+              }
+              await showPhoneNotification({
+                title: `Task Completed by ${currentUser}`,
+                body: 'Daily matter completed — great job! (Test Completion Alert)',
+                tag: `test-note-done-${Date.now()}`,
+                kind: 'note_completed',
+                onInAppNotify: pushInAppNotification,
+              });
+            }}
+            className="min-h-[38px] px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold transition cursor-pointer"
+          >
+            Test Task Done Alert
           </button>
 
           <button

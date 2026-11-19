@@ -9,11 +9,12 @@ import {
   ShieldCheck,
   Wallet,
   Zap,
+  CalendarDays,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 
-export type NavTab = 'dashboard' | 'transactions' | 'accounts' | 'emis' | 'reports' | 'settings';
+export type NavTab = 'dashboard' | 'transactions' | 'accounts' | 'emis' | 'notes' | 'reports' | 'settings';
 
 interface SidebarProps {
   currentTab: NavTab;
@@ -37,6 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'transactions' as NavTab, label: 'Transactions', icon: IndianRupee },
     { id: 'accounts' as NavTab, label: 'Bank & Cash', icon: Wallet },
     { id: 'emis' as NavTab, label: 'Loans & EMIs', icon: Landmark },
+    { id: 'notes' as NavTab, label: 'Daily Notes & Calendar', icon: CalendarDays },
     { id: 'reports' as NavTab, label: 'Analytics & Reports', icon: BarChart3 },
     { id: 'settings' as NavTab, label: 'Settings & Security', icon: Settings },
   ];

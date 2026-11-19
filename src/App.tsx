@@ -14,6 +14,7 @@ import { DashboardView } from './components/views/DashboardView';
 import { TransactionsView } from './components/views/TransactionsView';
 import { AccountsView } from './components/views/AccountsView';
 import { EmisView } from './components/views/EmisView';
+import { DailyNotesView } from './components/views/DailyNotesView';
 import { ReportsView } from './components/views/ReportsView';
 import { SettingsView } from './components/views/SettingsView';
 import { PinLockModal } from './components/common/PinLockModal';
@@ -25,11 +26,12 @@ import { TransferMoneyModal } from './components/modals/TransferMoneyModal';
 import { PayEmiModal } from './components/modals/PayEmiModal';
 import { AddEditAccountModal } from './components/modals/AddEditAccountModal';
 import { AddEditLoanModal } from './components/modals/AddEditLoanModal';
+import { AddEditNoteModal } from './components/modals/AddEditNoteModal';
 import { BudgetManagementModal } from './components/modals/BudgetManagementModal';
 import { ReceiptViewerModal } from './components/common/ReceiptViewerModal';
 import { OfflineIndicator } from './components/common/OfflineIndicator';
 import { NotificationBanner } from './components/common/NotificationBanner';
-import { BankAccount, Loan, LoanType, Transaction } from './types/finance';
+import { BankAccount, DailyNote, Loan, LoanType, NoteType, Transaction } from './types/finance';
 
 export type ModalType =
   | 'quick'
@@ -42,6 +44,8 @@ export type ModalType =
   | 'edit_account'
   | 'add_loan'
   | 'edit_loan'
+  | 'add_note'
+  | 'edit_note'
   | 'receipt'
   | 'more_menu'
   | null;
@@ -50,7 +54,7 @@ function MainApp() {
   const [currentTab, setCurrentTab] = useState<NavTab>(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.replace('#', '').split('-')[0];
-      if (['dashboard', 'transactions', 'accounts', 'emis', 'reports', 'settings'].includes(hash)) {
+      if (['dashboard', 'transactions', 'accounts', 'emis', 'notes', 'reports', 'settings'].includes(hash)) {
         return hash as NavTab;
       }
     }
@@ -67,6 +71,9 @@ function MainApp() {
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [editingNote, setEditingNote] = useState<DailyNote | null>(null);
+  const [presetNoteDate, setPresetNoteDate] = useState<string | undefined>(undefined);
+  const [presetNoteType, setPresetNoteType] = useState<NoteType | undefined>(undefined);
   const [receiptData, setReceiptData] = useState<{ imgUrl?: string; title: string }>({ title: '' });
 
   const modalHistoryPushedRef = useRef(false);
@@ -105,6 +112,9 @@ function MainApp() {
     setEditingAccount(null);
     setEditingLoan(null);
     setEditingTransaction(null);
+    setEditingNote(null);
+    setPresetNoteDate(undefined);
+    setPresetNoteType(undefined);
     setPresetLoanId(undefined);
     setPresetLoanType(undefined);
     setReturnToPayEmi(false);
@@ -119,6 +129,11 @@ function MainApp() {
         setCurrentTab('emis');
         if (typeof window !== 'undefined') {
           window.history.replaceState({ tab: 'emis', isModal: false }, '', '#emis');
+        }
+      } else if (closedType === 'add_note' || closedType === 'edit_note') {
+        setCurrentTab('notes');
+        if (typeof window !== 'undefined') {
+          window.history.replaceState({ tab: 'notes', isModal: false }, '', '#notes');
         }
       } else {
         setCurrentTab('transactions');
@@ -163,6 +178,9 @@ function MainApp() {
           setEditingAccount(null);
           setEditingLoan(null);
           setEditingTransaction(null);
+          setEditingNote(null);
+          setPresetNoteDate(undefined);
+          setPresetNoteType(undefined);
           setPresetLoanId(undefined);
           return;
         }
@@ -171,7 +189,7 @@ function MainApp() {
           setCurrentTab(event.state.tab);
         } else {
           const cleanHash = window.location.hash.replace('#', '').split('-')[0];
-          if (['dashboard', 'transactions', 'accounts', 'emis', 'reports', 'settings'].includes(cleanHash)) {
+          if (['dashboard', 'transactions', 'accounts', 'emis', 'notes', 'reports', 'settings'].includes(cleanHash)) {
             setCurrentTab(cleanHash as NavTab);
           } else {
             setCurrentTab('dashboard');
@@ -252,6 +270,20 @@ function MainApp() {
     openModal('add_loan');
   };
 
+  const handleOpenAddNote = (presetDate?: string, presetType?: NoteType) => {
+    setEditingNote(null);
+    setPresetNoteDate(presetDate);
+    setPresetNoteType(presetType);
+    openModal('add_note');
+  };
+
+  const handleOpenEditNote = (note: DailyNote) => {
+    setEditingNote(note);
+    setPresetNoteDate(undefined);
+    setPresetNoteType(undefined);
+    openModal('edit_note');
+  };
+
   const handleViewReceipt = (imgUrl: string, title: string) => {
     setReceiptData({ imgUrl, title });
     openModal('receipt');
@@ -303,6 +335,13 @@ function MainApp() {
             onEditLoan={handleOpenEditLoan}
             onPayEmi={handlePayEmiForLoan}
             onEditTransaction={handleEditTx}
+          />
+        )}
+
+        {currentTab === 'notes' && (
+          <DailyNotesView
+            onOpenAddNote={handleOpenAddNote}
+            onEditNote={handleOpenEditNote}
           />
         )}
 
@@ -383,6 +422,14 @@ function MainApp() {
         onClose={closeModal}
         editLoanData={editingLoan}
         presetLoanType={presetLoanType}
+      />
+
+      <AddEditNoteModal
+        isOpen={activeModal === 'add_note' || activeModal === 'edit_note'}
+        onClose={closeModal}
+        editNote={editingNote}
+        presetDate={presetNoteDate}
+        presetType={presetNoteType}
       />
 
       <BudgetManagementModal
