@@ -60,13 +60,15 @@ export const PayEmiModal: React.FC<PayEmiModalProps> = ({
 
   const sortedAccounts = useMemo(
     () =>
-      [...bankAccounts].sort((a, b) => {
-        if (Boolean(a.isDefault) !== Boolean(b.isDefault)) {
-          return a.isDefault ? -1 : 1;
-        }
-        return 0;
-      }),
-    [bankAccounts]
+      bankAccounts
+        .filter((a) => a.owner !== 'Joint' || (editTx && editTx.fromAccountId === a.id))
+        .sort((a, b) => {
+          if (Boolean(a.isDefault) !== Boolean(b.isDefault)) {
+            return a.isDefault ? -1 : 1;
+          }
+          return 0;
+        }),
+    [bankAccounts, editTx]
   );
 
   useEffect(() => {
@@ -90,13 +92,12 @@ export const PayEmiModal: React.FC<PayEmiModalProps> = ({
       setPaymentPeriod(defaultPeriod);
       setAmount(loan ? String(getLoanScheduledPaymentAmount(loan, defaultPeriod)) : '');
       setPaidBy(currentUser);
-      setPaymentMethod(bankAccounts.length > 0 ? 'bank' : 'cash');
+      setPaymentMethod(sortedAccounts.length > 0 ? 'bank' : 'cash');
       const defAcc =
-        (loan?.linkedAccountId ? bankAccounts.find((a) => a.id === loan.linkedAccountId) : undefined) ||
+        (loan?.linkedAccountId ? sortedAccounts.find((a) => a.id === loan.linkedAccountId) : undefined) ||
         defaultBankAccount ||
-        bankAccounts.find((a) => a.owner === currentUser) ||
-        bankAccounts.find((a) => a.owner === 'Joint') ||
-        bankAccounts[0];
+        sortedAccounts.find((a) => a.owner === currentUser) ||
+        sortedAccounts[0];
       setAccountId(defAcc?.id || '');
       setDate(getTodayISO());
       setNotes('');

@@ -5,14 +5,16 @@ import { X, Building2, Check, IndianRupee, Star } from 'lucide-react';
 
 interface AddEditAccountModalProps {
   isOpen: boolean;
-  onClose: (saved?: boolean) => void;
+  onClose: (saved?: boolean, savedOwner?: 'Anson' | 'Dona' | 'Joint') => void;
   editAccount?: BankAccount | null;
+  presetOwner?: 'Anson' | 'Dona' | 'Joint';
 }
 
 export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
   isOpen,
   onClose,
   editAccount,
+  presetOwner,
 }) => {
   const { addBankAccount, editBankAccount, bankAccounts, currentUser } = useFinance();
 
@@ -37,17 +39,19 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
       setIsCustomBank(false);
       setCustomBankInput('');
     } else {
+      const initialOwner = presetOwner || currentUser;
+      const personalCount = bankAccounts.filter((a) => a.owner !== 'Joint').length;
       setName('');
       setBankName('HDFC Bank');
       setIsCustomBank(false);
       setCustomBankInput('');
       setAccountNumberMasked('');
-      setOwner(currentUser);
+      setOwner(initialOwner);
       setBalance('');
-      setIsDefault(bankAccounts.length === 0);
+      setIsDefault(initialOwner !== 'Joint' && personalCount === 0);
       setError('');
     }
-  }, [editAccount, isOpen, currentUser, bankAccounts.length]);
+  }, [editAccount, isOpen, currentUser, bankAccounts.length, presetOwner]);
 
   if (!isOpen) return null;
 
@@ -63,6 +67,8 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
     const finalBankName = isCustomBank ? (customBankInput.trim() || 'Bank Account') : bankName;
     const finalName = name.trim() || `${finalBankName} Account`;
 
+    const effectiveIsDefault = owner === 'Joint' ? false : isDefault;
+
     if (editAccount) {
       editBankAccount(editAccount.id, {
         name: finalName,
@@ -70,7 +76,7 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
         accountNumberMasked: accountNumberMasked.trim() ? accountNumberMasked.trim() : undefined,
         owner,
         currentBalance: numBalance,
-        isDefault,
+        isDefault: effectiveIsDefault,
       });
     } else {
       addBankAccount({
@@ -80,11 +86,11 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
         owner,
         openingBalance: numBalance,
         currentBalance: numBalance,
-        isDefault,
+        isDefault: effectiveIsDefault,
       });
     }
 
-    onClose(true);
+    onClose(true, owner);
   };
 
   const commonBanks = [
@@ -230,14 +236,20 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
                           : 'bg-indigo-600'
                       }`}
                     />
-                    <span>{o === 'Joint' ? 'Joint' : o}</span>
+                    <span>{o === 'Joint' ? 'Joint (Savings)' : o}</span>
                   </button>
                 );
               })}
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">
-              Select whether this account belongs to Anson, Dona, or is a Joint account for both.
-            </p>
+            {owner === 'Joint' ? (
+              <div className="mt-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200/80 text-[11px] font-medium text-emerald-800">
+                Joint accounts are stored on the dedicated <strong>Family Savings</strong> page for saving money — excluded from Family/Individual spending balances &amp; expenses.
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-400 mt-1">
+                Select Anson or Dona for regular spending accounts, or Joint for Family Savings.
+              </p>
+            )}
           </div>
 
           {/* Balance (₹) */}
@@ -279,30 +291,32 @@ export const AddEditAccountModal: React.FC<AddEditAccountModalProps> = ({
             />
           </div>
 
-          {/* Default Payment Bank Account Toggle */}
-          <label className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100/70 transition">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div
-                className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                  isDefault ? 'bg-amber-100 text-amber-600' : 'bg-white text-slate-400 border border-slate-200'
-                }`}
-              >
-                <Star className={`w-4 h-4 ${isDefault ? 'fill-amber-500 text-amber-500' : ''}`} />
+          {/* Default Payment Bank Account Toggle (Personal spending accounts only) */}
+          {owner !== 'Joint' && (
+            <label className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100/70 transition">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                    isDefault ? 'bg-amber-100 text-amber-600' : 'bg-white text-slate-400 border border-slate-200'
+                  }`}
+                >
+                  <Star className={`w-4 h-4 ${isDefault ? 'fill-amber-500 text-amber-500' : ''}`} />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-900">Default Bank Account</p>
+                  <p className="text-[11px] text-slate-500">
+                    Auto-select for Expense, Income &amp; EMI payments
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-bold text-slate-900">Default Bank Account</p>
-                <p className="text-[11px] text-slate-500">
-                  Auto-select for Expense, Income &amp; EMI payments
-                </p>
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              checked={isDefault}
-              onChange={(e) => setIsDefault(e.target.checked)}
-              className="w-5 h-5 accent-blue-600 rounded cursor-pointer shrink-0"
-            />
-          </label>
+              <input
+                type="checkbox"
+                checked={isDefault}
+                onChange={(e) => setIsDefault(e.target.checked)}
+                className="w-5 h-5 accent-blue-600 rounded cursor-pointer shrink-0"
+              />
+            </label>
+          )}
 
           {/* Action buttons: Cancel and Save */}
           <div className="pt-2 flex items-center gap-3">

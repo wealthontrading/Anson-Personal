@@ -44,6 +44,7 @@ import {
   Circle,
   Cake,
   Heart,
+  PiggyBank,
 } from 'lucide-react';
 import { Transaction } from '../../types/finance';
 import { NavTab } from '../navigation/Sidebar';
@@ -223,15 +224,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => onSelectTab('accounts')}
-            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-xs font-bold text-slate-700 inline-flex items-center gap-1.5 self-start transition cursor-pointer"
-          >
-            <Wallet className="w-3.5 h-3.5 text-slate-500" />
-            <span>Accounts</span>
-            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-          </button>
+          <div className="flex flex-wrap items-center gap-2 self-start">
+            <button
+              type="button"
+              onClick={() => onSelectTab('accounts')}
+              className="min-h-[38px] px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-xs font-bold text-slate-700 inline-flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <Wallet className="w-3.5 h-3.5 text-slate-500" />
+              <span>Accounts</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectTab('emis')}
+              className="min-h-[38px] px-3 py-1.5 rounded-xl bg-indigo-50/70 hover:bg-indigo-100/80 border border-indigo-200/70 text-xs font-bold text-indigo-800 inline-flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <Landmark className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Loans</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectTab('savings')}
+              className="min-h-[38px] px-3 py-1.5 rounded-xl bg-emerald-50/70 hover:bg-emerald-100/80 border border-emerald-200/70 text-xs font-bold text-emerald-800 inline-flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <PiggyBank className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Savings</span>
+            </button>
+          </div>
         </div>
 
         {/* Clean 3-column Monthly Summary */}

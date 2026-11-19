@@ -23,6 +23,8 @@ export const ReportsView: React.FC = () => {
   const {
     transactions,
     bankAccounts,
+    jointSavingsAccounts,
+    familySavingsBalance,
     cashWallets,
     loans,
     familySummary,
@@ -266,12 +268,16 @@ export const ReportsView: React.FC = () => {
 
           <div className="space-y-2 text-xs">
             <div className="flex justify-between py-1 text-slate-600">
-              <span>All Bank Accounts ({bankAccounts.length})</span>
+              <span>Personal Bank Accounts ({bankAccounts.filter((a) => a.owner !== 'Joint').length})</span>
               <strong className="text-slate-900">{formatINR(familySummary.bankBalance)}</strong>
             </div>
             <div className="flex justify-between py-1 text-slate-600">
-              <span>Cash in Hand (Anson & Dona)</span>
+              <span>Cash in Hand (Anson &amp; Dona)</span>
               <strong className="text-slate-900">{formatINR(familySummary.cashInHand)}</strong>
+            </div>
+            <div className="flex justify-between py-1.5 mt-1 border-t border-slate-100 text-emerald-700 font-semibold">
+              <span>Family Savings (Joint · {jointSavingsAccounts.length} A/C)</span>
+              <strong className="text-emerald-700">{formatINR(familySavingsBalance)}</strong>
             </div>
           </div>
         </div>

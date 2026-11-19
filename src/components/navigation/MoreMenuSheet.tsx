@@ -1,7 +1,7 @@
 import React from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { NavTab } from './Sidebar';
-import { Landmark, BarChart3, Target, Settings, Lock, LogOut, X, ChevronRight, CalendarDays } from 'lucide-react';
+import { Landmark, BarChart3, Target, Settings, Lock, LogOut, X, ChevronRight, CalendarDays, PiggyBank } from 'lucide-react';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 
 interface MoreMenuSheetProps {
@@ -23,23 +23,30 @@ export const MoreMenuSheet: React.FC<MoreMenuSheetProps> = ({
 
   const menuItems = [
     {
+      label: 'Loans & EMIs',
+      desc: 'Track regular loans, Gold Loans & pay EMIs',
+      icon: Landmark,
+      color: 'bg-indigo-50 text-indigo-600',
+      onClick: () => {
+        onSelectTab('emis');
+      },
+    },
+    {
+      label: 'Family Savings (Joint)',
+      desc: 'Joint savings money kept separate from expenses',
+      icon: PiggyBank,
+      color: 'bg-emerald-50 text-emerald-600',
+      onClick: () => {
+        onSelectTab('savings');
+      },
+    },
+    {
       label: 'Daily Notes & Calendar',
       desc: 'Daily matters, journey diary, birthdays & wedding reminders',
       icon: CalendarDays,
       color: 'bg-rose-50 text-rose-600',
       onClick: () => {
-        onClose();
         onSelectTab('notes');
-      },
-    },
-    {
-      label: 'Loans & EMIs',
-      desc: 'Track loans and pay monthly EMIs',
-      icon: Landmark,
-      color: 'bg-indigo-50 text-indigo-600',
-      onClick: () => {
-        onClose();
-        onSelectTab('emis');
       },
     },
     {
@@ -48,7 +55,6 @@ export const MoreMenuSheet: React.FC<MoreMenuSheetProps> = ({
       icon: BarChart3,
       color: 'bg-blue-50 text-blue-600',
       onClick: () => {
-        onClose();
         onSelectTab('reports');
       },
     },
@@ -56,9 +62,8 @@ export const MoreMenuSheet: React.FC<MoreMenuSheetProps> = ({
       label: 'Monthly Budgets',
       desc: 'Set category spending limits',
       icon: Target,
-      color: 'bg-emerald-50 text-emerald-600',
+      color: 'bg-amber-50 text-amber-700',
       onClick: () => {
-        onClose();
         onOpenBudgetModal();
       },
     },
@@ -68,7 +73,6 @@ export const MoreMenuSheet: React.FC<MoreMenuSheetProps> = ({
       icon: Settings,
       color: 'bg-slate-100 text-slate-700',
       onClick: () => {
-        onClose();
         onSelectTab('settings');
       },
     },
@@ -80,7 +84,7 @@ export const MoreMenuSheet: React.FC<MoreMenuSheetProps> = ({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md bg-white rounded-t-3xl p-5 pb-safe shadow-2xl border-t border-slate-200 animate-in slide-in-from-bottom-6 duration-200"
+        className="w-full max-w-md max-h-[85vh] overflow-y-auto bg-white rounded-t-3xl p-5 pb-safe shadow-2xl border-t border-slate-200 animate-in slide-in-from-bottom-6 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
@@ -94,7 +98,7 @@ export const MoreMenuSheet: React.FC<MoreMenuSheetProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close menu"
-            className="min-w-[40px] min-h-[40px] rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center"
+            className="min-w-[40px] min-h-[40px] rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -110,13 +114,13 @@ export const MoreMenuSheet: React.FC<MoreMenuSheetProps> = ({
                 onClick={item.onClick}
                 className="w-full min-h-[56px] px-3 py-2.5 rounded-2xl hover:bg-slate-50 active:bg-slate-100 flex items-center justify-between text-left transition cursor-pointer"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.color}`}>
                     <Icon className="w-5 h-5" />
                   </div>
-                  <div>
-                    <span className="block text-sm font-bold text-slate-900">{item.label}</span>
-                    <span className="block text-xs text-slate-500">{item.desc}</span>
+                  <div className="min-w-0">
+                    <span className="block text-sm font-bold text-slate-900 truncate">{item.label}</span>
+                    <span className="block text-xs text-slate-500 truncate">{item.desc}</span>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />

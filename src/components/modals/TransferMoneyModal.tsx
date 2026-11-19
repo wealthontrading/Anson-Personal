@@ -8,12 +8,16 @@ interface TransferMoneyModalProps {
   isOpen: boolean;
   onClose: (saved?: boolean) => void;
   editTx?: Transaction | null;
+  presetToAccountId?: string;
+  presetTitle?: string;
 }
 
 export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
   isOpen,
   onClose,
   editTx,
+  presetToAccountId,
+  presetTitle,
 }) => {
   const { currentUser, bankAccounts, defaultBankAccount, cashWallets, transferMoney, editTransaction } = useFinance();
 
@@ -65,6 +69,25 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
       setToCashPerson(editTx.toCashPerson || 'Dona');
       setNotes(editTx.notes || '');
       setError('');
+    } else if (presetToAccountId) {
+      const otherBank =
+        (defaultBankAccount && defaultBankAccount.id !== presetToAccountId ? defaultBankAccount : undefined) ||
+        sortedAccounts.find((a) => a.id !== presetToAccountId && a.owner !== 'Joint') ||
+        sortedAccounts.find((a) => a.id !== presetToAccountId);
+
+      if (otherBank) {
+        setTransferType('bank_to_bank');
+        setFromAccountId(otherBank.id);
+      } else {
+        setTransferType('cash_to_bank');
+        setFromCashPerson(currentUser);
+      }
+      setToAccountId(presetToAccountId);
+      setTitle(presetTitle || 'Deposit to Family Savings');
+      setDate(getTodayISO());
+      setAmount('');
+      setNotes('');
+      setError('');
     } else {
       if (bankAccounts.length >= 2) {
         setTransferType('bank_to_bank');
@@ -85,7 +108,7 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
       setNotes('');
       setError('');
     }
-  }, [isOpen, editTx, bankAccounts.length, defaultBankAccount]);
+  }, [isOpen, editTx, bankAccounts.length, defaultBankAccount, presetToAccountId, presetTitle, currentUser]);
 
   useEffect(() => {
     if (sortedAccounts.length > 0) {
@@ -341,7 +364,8 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
                   >
                     {sortedAccounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
-                        {acc.isDefault ? '★ Default · ' : ''}{acc.bankName} - {acc.name} ({acc.owner}) • Bal: ₹{acc.currentBalance.toLocaleString('en-IN')}
+                        {acc.owner === 'Joint' ? '[Family Savings] ' : acc.isDefault ? '★ Default · ' : ''}
+                        {acc.bankName} - {acc.name} ({acc.owner}) • Bal: ₹{acc.currentBalance.toLocaleString('en-IN')}
                       </option>
                     ))}
                   </select>
@@ -378,7 +402,8 @@ export const TransferMoneyModal: React.FC<TransferMoneyModalProps> = ({
                   >
                     {sortedAccounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
-                        {acc.isDefault ? '★ Default · ' : ''}{acc.bankName} - {acc.name} ({acc.owner}) • Bal: ₹{acc.currentBalance.toLocaleString('en-IN')}
+                        {acc.owner === 'Joint' ? '[Family Savings] ' : acc.isDefault ? '★ Default · ' : ''}
+                        {acc.bankName} - {acc.name} ({acc.owner}) • Bal: ₹{acc.currentBalance.toLocaleString('en-IN')}
                       </option>
                     ))}
                   </select>

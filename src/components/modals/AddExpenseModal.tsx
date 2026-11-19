@@ -32,15 +32,19 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   const [newCategoryName, setNewCategoryName] = useState<string>('');
   const [newCategoryColor, setNewCategoryColor] = useState<string>('#f97316');
 
-  // Sort available accounts so default account comes first, then current user & joint accounts
-  const availableAccounts = [...bankAccounts].sort((a, b) => {
-    if (Boolean(a.isDefault) !== Boolean(b.isDefault)) {
-      return a.isDefault ? -1 : 1;
-    }
-    const aMatch = a.owner === currentUser ? -2 : a.owner === 'Joint' ? -1 : 0;
-    const bMatch = b.owner === currentUser ? -2 : b.owner === 'Joint' ? -1 : 0;
-    return aMatch - bMatch;
-  });
+  // Exclude Joint accounts (reserved for Family Savings, not for expenses)
+  // Keep a Joint account only if editing an older expense that already referenced it
+  const hasJointSavings = bankAccounts.some((a) => a.owner === 'Joint');
+  const availableAccounts = bankAccounts
+    .filter((a) => a.owner !== 'Joint' || (editTx && editTx.fromAccountId === a.id))
+    .sort((a, b) => {
+      if (Boolean(a.isDefault) !== Boolean(b.isDefault)) {
+        return a.isDefault ? -1 : 1;
+      }
+      const aMatch = a.owner === currentUser ? -1 : 0;
+      const bMatch = b.owner === currentUser ? -1 : 0;
+      return aMatch - bMatch;
+    });
 
   // Sync state if editing an existing transaction
   useEffect(() => {
@@ -55,15 +59,15 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       setReceiptImage(editTx.receiptImage);
       setError('');
     } else {
+      const spendingAccounts = bankAccounts.filter((a) => a.owner !== 'Joint');
       setAmount('');
       setCategory('food');
       setPaidBy(currentUser);
-      setPaymentMethod(bankAccounts.length > 0 ? 'bank' : 'cash');
+      setPaymentMethod(spendingAccounts.length > 0 ? 'bank' : 'cash');
       const fallbackAcc =
         defaultBankAccount ||
-        bankAccounts.find((a) => a.owner === currentUser) ||
-        bankAccounts.find((a) => a.owner === 'Joint') ||
-        bankAccounts[0];
+        spendingAccounts.find((a) => a.owner === currentUser) ||
+        spendingAccounts[0];
       setSelectedAccountId(fallbackAcc?.id || '');
       setDate(getTodayISO());
       setNotes('');
@@ -75,7 +79,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
     }
   }, [editTx, isOpen, currentUser, bankAccounts, defaultBankAccount]);
 
-  // Ensure an account is always selected when bank accounts exist
+  // Ensure an account is always selected when spending bank accounts exist
   useEffect(() => {
     if ((!selectedAccountId || !availableAccounts.some((a) => a.id === selectedAccountId)) && availableAccounts.length > 0) {
       setSelectedAccountId(availableAccounts[0].id);
@@ -417,20 +421,27 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
             {paymentMethod !== 'cash' ? (
               availableAccounts.length === 0 ? (
                 <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-                  No bank accounts added for <strong>{paidBy}</strong> yet. Please select <strong>Cash in Hand</strong> above or add a bank account in the Accounts section.
+                  No personal bank accounts added yet. Select <strong>Cash in Hand</strong> above or add an Anson/Dona bank account in Accounts. (Joint accounts are kept protected in Family Savings.)
                 </div>
               ) : (
-                <select
-                  value={selectedAccountId}
-                  onChange={(e) => setSelectedAccountId(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500"
-                >
-                  {availableAccounts.map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.isDefault ? '★ Default · ' : ''}[{acc.owner}] {acc.bankName} - {acc.name} ({acc.accountNumberMasked || 'A/C'}) • Bal: ₹{acc.currentBalance.toLocaleString('en-IN')}
-                    </option>
-                  ))}
-                </select>
+                <div className="space-y-1.5">
+                  <select
+                    value={selectedAccountId}
+                    onChange={(e) => setSelectedAccountId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500"
+                  >
+                    {availableAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.isDefault ? '★ Default · ' : ''}[{acc.owner}] {acc.bankName} - {acc.name} ({acc.accountNumberMasked || 'A/C'}) • Bal: ₹{acc.currentBalance.toLocaleString('en-IN')}
+                      </option>
+                    ))}
+                  </select>
+                  {hasJointSavings && (
+                    <p className="text-[11px] text-emerald-700 font-medium">
+                      Joint Family Savings accounts are protected for saving money and hidden from expenses.
+                    </p>
+                  )}
+                </div>
               )
             ) : (
               <div className="p-2.5 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs text-amber-800 flex items-center justify-between">

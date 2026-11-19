@@ -13,6 +13,7 @@ import { MoreMenuSheet } from './components/navigation/MoreMenuSheet';
 import { DashboardView } from './components/views/DashboardView';
 import { TransactionsView } from './components/views/TransactionsView';
 import { AccountsView } from './components/views/AccountsView';
+import { FamilySavingsView } from './components/views/FamilySavingsView';
 import { EmisView } from './components/views/EmisView';
 import { DailyNotesView } from './components/views/DailyNotesView';
 import { ReportsView } from './components/views/ReportsView';
@@ -54,7 +55,7 @@ function MainApp() {
   const [currentTab, setCurrentTab] = useState<NavTab>(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.replace('#', '').split('-')[0];
-      if (['dashboard', 'transactions', 'accounts', 'emis', 'notes', 'reports', 'settings'].includes(hash)) {
+      if (['dashboard', 'transactions', 'accounts', 'savings', 'emis', 'notes', 'reports', 'settings'].includes(hash)) {
         return hash as NavTab;
       }
     }
@@ -69,6 +70,9 @@ function MainApp() {
   const [presetLoanType, setPresetLoanType] = useState<LoanType | undefined>(undefined);
   const [returnToPayEmi, setReturnToPayEmi] = useState<boolean>(false);
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
+  const [presetAccountOwner, setPresetAccountOwner] = useState<'Anson' | 'Dona' | 'Joint' | undefined>(undefined);
+  const [presetTransferToAccountId, setPresetTransferToAccountId] = useState<string | undefined>(undefined);
+  const [presetTransferTitle, setPresetTransferTitle] = useState<string | undefined>(undefined);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [editingNote, setEditingNote] = useState<DailyNote | null>(null);
@@ -93,16 +97,17 @@ function MainApp() {
     }
   };
 
-  const closeModal = (saved?: boolean, createdLoanId?: string) => {
+  const closeModal = (saved?: boolean, extraMeta?: string) => {
     const closedType = activeModal;
+    const wasSavingsTransfer = Boolean(presetTransferToAccountId);
 
     // If user clicked "+ Add Loan" inside PayEmiModal, return straight back to PayEmiModal
     if (closedType === 'add_loan' && returnToPayEmi) {
       setReturnToPayEmi(false);
       setPresetLoanType(undefined);
       setEditingLoan(null);
-      if (saved && createdLoanId) {
-        setPresetLoanId(createdLoanId);
+      if (saved && extraMeta) {
+        setPresetLoanId(extraMeta);
       }
       setActiveModal('emi');
       return;
@@ -110,6 +115,9 @@ function MainApp() {
 
     setActiveModal(null);
     setEditingAccount(null);
+    setPresetAccountOwner(undefined);
+    setPresetTransferToAccountId(undefined);
+    setPresetTransferTitle(undefined);
     setEditingLoan(null);
     setEditingTransaction(null);
     setEditingNote(null);
@@ -121,9 +129,15 @@ function MainApp() {
 
     if (saved) {
       if (closedType === 'add_account' || closedType === 'edit_account') {
-        setCurrentTab('accounts');
+        const destTab: NavTab = extraMeta === 'Joint' ? 'savings' : 'accounts';
+        setCurrentTab(destTab);
         if (typeof window !== 'undefined') {
-          window.history.replaceState({ tab: 'accounts', isModal: false }, '', '#accounts');
+          window.history.replaceState({ tab: destTab, isModal: false }, '', `#${destTab}`);
+        }
+      } else if (closedType === 'transfer' && wasSavingsTransfer) {
+        setCurrentTab('savings');
+        if (typeof window !== 'undefined') {
+          window.history.replaceState({ tab: 'savings', isModal: false }, '', '#savings');
         }
       } else if (closedType === 'add_loan' || closedType === 'edit_loan' || closedType === 'emi') {
         setCurrentTab('emis');
@@ -154,9 +168,32 @@ function MainApp() {
   };
 
   const handleSelectTab = (tab: NavTab, pushHistory = true) => {
-    if (pushHistory && typeof window !== 'undefined' && tab !== currentTab) {
+    const hadOpenModal = activeModalRef.current !== null || modalHistoryPushedRef.current;
+
+    if (hadOpenModal) {
+      // Close any open modal/sheet cleanly WITHOUT calling window.history.back()
+      // (calling history.back() asynchronously bounces mobile users away from the selected tab!)
+      setActiveModal(null);
+      setEditingAccount(null);
+      setPresetAccountOwner(undefined);
+      setPresetTransferToAccountId(undefined);
+      setPresetTransferTitle(undefined);
+      setEditingLoan(null);
+      setEditingTransaction(null);
+      setEditingNote(null);
+      setPresetNoteDate(undefined);
+      setPresetNoteType(undefined);
+      setPresetLoanId(undefined);
+      setPresetLoanType(undefined);
+      setReturnToPayEmi(false);
+      modalHistoryPushedRef.current = false;
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({ tab, isModal: false }, '', `#${tab}`);
+      }
+    } else if (pushHistory && typeof window !== 'undefined' && tab !== currentTab) {
       window.history.pushState({ tab, isModal: false }, '', `#${tab}`);
     }
+
     setCurrentTab(tab);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -176,6 +213,9 @@ function MainApp() {
           modalHistoryPushedRef.current = false;
           setActiveModal(null);
           setEditingAccount(null);
+          setPresetAccountOwner(undefined);
+          setPresetTransferToAccountId(undefined);
+          setPresetTransferTitle(undefined);
           setEditingLoan(null);
           setEditingTransaction(null);
           setEditingNote(null);
@@ -189,7 +229,7 @@ function MainApp() {
           setCurrentTab(event.state.tab);
         } else {
           const cleanHash = window.location.hash.replace('#', '').split('-')[0];
-          if (['dashboard', 'transactions', 'accounts', 'emis', 'notes', 'reports', 'settings'].includes(cleanHash)) {
+          if (['dashboard', 'transactions', 'accounts', 'savings', 'emis', 'notes', 'reports', 'settings'].includes(cleanHash)) {
             setCurrentTab(cleanHash as NavTab);
           } else {
             setCurrentTab('dashboard');
@@ -237,12 +277,27 @@ function MainApp() {
 
   const handleOpenEditAccount = (acc: BankAccount) => {
     setEditingAccount(acc);
+    setPresetAccountOwner(undefined);
     openModal('edit_account');
   };
 
   const handleOpenAddAccount = () => {
     setEditingAccount(null);
+    setPresetAccountOwner(undefined);
     openModal('add_account');
+  };
+
+  const handleOpenAddJointAccount = () => {
+    setEditingAccount(null);
+    setPresetAccountOwner('Joint');
+    openModal('add_account');
+  };
+
+  const handleOpenTransferToSavings = (toAccountId?: string, title?: string) => {
+    setEditingTransaction(null);
+    setPresetTransferToAccountId(toAccountId);
+    setPresetTransferTitle(title);
+    openModal('transfer');
   };
 
   const handleOpenEditLoan = (loan: Loan) => {
@@ -323,8 +378,22 @@ function MainApp() {
           <AccountsView
             onOpenAddAccount={handleOpenAddAccount}
             onEditAccount={handleOpenEditAccount}
-            onOpenTransfer={() => openModal('transfer')}
+            onOpenTransfer={() => {
+              setPresetTransferToAccountId(undefined);
+              setPresetTransferTitle(undefined);
+              openModal('transfer');
+            }}
             onOpenQuickIncome={() => openModal('income')}
+            onSelectTab={handleSelectTab}
+          />
+        )}
+
+        {currentTab === 'savings' && (
+          <FamilySavingsView
+            onOpenAddJointAccount={handleOpenAddJointAccount}
+            onEditAccount={handleOpenEditAccount}
+            onOpenTransferToSavings={handleOpenTransferToSavings}
+            onEditTransaction={handleEditTx}
           />
         )}
 
@@ -401,6 +470,8 @@ function MainApp() {
         isOpen={activeModal === 'transfer'}
         onClose={closeModal}
         editTx={editingTransaction}
+        presetToAccountId={presetTransferToAccountId}
+        presetTitle={presetTransferTitle}
       />
 
       <PayEmiModal
@@ -415,6 +486,7 @@ function MainApp() {
         isOpen={activeModal === 'add_account' || activeModal === 'edit_account'}
         onClose={closeModal}
         editAccount={editingAccount}
+        presetOwner={presetAccountOwner}
       />
 
       <AddEditLoanModal

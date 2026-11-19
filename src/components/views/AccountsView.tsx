@@ -11,22 +11,29 @@ import {
   Trash2,
   IndianRupee,
   Star,
+  PiggyBank,
+  ChevronRight,
 } from 'lucide-react';
+import { NavTab } from '../navigation/Sidebar';
 
 interface AccountsViewProps {
   onOpenAddAccount: () => void;
   onEditAccount: (account: BankAccount) => void;
   onOpenTransfer: () => void;
   onOpenQuickIncome: () => void;
+  onSelectTab?: (tab: NavTab) => void;
 }
 
 export const AccountsView: React.FC<AccountsViewProps> = ({
   onOpenAddAccount,
   onEditAccount,
   onOpenTransfer,
+  onSelectTab,
 }) => {
   const {
     bankAccounts,
+    jointSavingsAccounts,
+    familySavingsBalance,
     cashWallets,
     deleteBankAccount,
     setDefaultBankAccount,
@@ -36,12 +43,15 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Personal spending bank accounts only (Joint accounts live on Family Savings page)
+  const personalBankAccounts = bankAccounts.filter((a) => a.owner !== 'Joint');
+
   const ansonCash = cashWallets.find((w) => w.owner === 'Anson')?.balance || 0;
   const donaCash = cashWallets.find((w) => w.owner === 'Dona')?.balance || 0;
-  const totalBank = bankAccounts.reduce((s, a) => s + a.currentBalance, 0);
+  const totalBank = personalBankAccounts.reduce((s, a) => s + a.currentBalance, 0);
   const totalCash = ansonCash + donaCash;
 
-  const selectedAccount = bankAccounts.find((a) => a.id === selectedAccountId);
+  const selectedAccount = personalBankAccounts.find((a) => a.id === selectedAccountId);
   const accountTransactions = selectedAccountId
     ? transactions.filter(
         (tx) => tx.fromAccountId === selectedAccountId || tx.toAccountId === selectedAccountId
@@ -85,21 +95,21 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-900">
-            Bank Accounts ({bankAccounts.length})
+            Personal Bank Accounts ({personalBankAccounts.length})
           </h3>
           <span className="text-xs font-bold text-slate-600 tabular-nums">
             {formatINR(totalBank)}
           </span>
         </div>
 
-        {bankAccounts.length === 0 ? (
+        {personalBankAccounts.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200/90 p-7 text-center">
             <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
               <Building2 className="w-5 h-5" />
             </div>
-            <h4 className="text-sm font-bold text-slate-900 mb-1">No Bank Accounts Yet</h4>
+            <h4 className="text-sm font-bold text-slate-900 mb-1">No Personal Bank Accounts Yet</h4>
             <p className="text-xs text-slate-500 max-w-xs mx-auto mb-4">
-              Add your bank accounts for Anson, Dona, or Joint to track balances cleanly.
+              Add personal bank accounts for Anson or Dona for everyday spending &amp; income. (Joint accounts are tracked in Family Savings.)
             </p>
             <button
               type="button"
@@ -112,7 +122,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {bankAccounts.map((acc) => {
+            {personalBankAccounts.map((acc) => {
               const isSelected = selectedAccountId === acc.id;
               return (
                 <div
@@ -321,6 +331,35 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
           ))}
         </div>
       </section>
+
+      {/* Separate Family Savings (Joint Accounts) Callout */}
+      {onSelectTab && (
+        <section className="bg-emerald-50/70 rounded-2xl border border-emerald-200/80 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+              <PiggyBank className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-emerald-950">
+                Family Savings (Joint Accounts)
+              </p>
+              <p className="text-xs text-emerald-800">
+                {jointSavingsAccounts.length > 0
+                  ? `${jointSavingsAccounts.length} joint account${jointSavingsAccounts.length === 1 ? '' : 's'} · ${formatINR(familySavingsBalance)} kept separate from expenses`
+                  : 'Joint accounts are managed separately on the Family Savings page (not for expenses).'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onSelectTab('savings')}
+            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 shrink-0 transition cursor-pointer"
+          >
+            <span>Open Family Savings</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </section>
+      )}
     </div>
   );
 };

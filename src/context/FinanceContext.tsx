@@ -92,6 +92,8 @@ interface FinanceContextType {
   dailyNotes: DailyNote[];
   isLiveSyncing: boolean;
   defaultBankAccount: BankAccount | undefined;
+  jointSavingsAccounts: BankAccount[];
+  familySavingsBalance: number;
 
   // Notifications & EMI Reminders
   deviceId: string;
@@ -1210,13 +1212,31 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   // Bank Accounts Management
-  const defaultBankAccount = useMemo(
-    () => bankAccounts.find((a) => a.isDefault) || bankAccounts[0],
+  // Joint accounts are reserved for Family Savings (not spending/expenses)
+  const jointSavingsAccounts = useMemo(
+    () => bankAccounts.filter((a) => a.owner === 'Joint'),
     [bankAccounts]
   );
 
+  const familySavingsBalance = useMemo(
+    () => jointSavingsAccounts.reduce((sum, acc) => sum + acc.currentBalance, 0),
+    [jointSavingsAccounts]
+  );
+
+  const spendingBankAccounts = useMemo(
+    () => bankAccounts.filter((a) => a.owner !== 'Joint'),
+    [bankAccounts]
+  );
+
+  const defaultBankAccount = useMemo(
+    () => spendingBankAccounts.find((a) => a.isDefault) || spendingBankAccounts[0],
+    [spendingBankAccounts]
+  );
+
   const addBankAccount = (accountData: Omit<BankAccount, 'id' | 'createdAt'>) => {
-    const shouldBeDefault = Boolean(accountData.isDefault) || bankAccounts.length === 0;
+    const isJointSavings = accountData.owner === 'Joint';
+    const hasPersonalDefault = bankAccounts.some((a) => a.owner !== 'Joint' && a.isDefault);
+    const shouldBeDefault = !isJointSavings && (Boolean(accountData.isDefault) || !hasPersonalDefault);
     const newAcc: BankAccount = {
       ...accountData,
       isDefault: shouldBeDefault,
@@ -1248,11 +1268,16 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   const editBankAccount = (id: string, updated: Partial<BankAccount>) => {
-    const makeDefault = updated.isDefault === true;
+    const isBecomingJoint = updated.owner === 'Joint';
+    const sanitizedUpdated: Partial<BankAccount> = isBecomingJoint
+      ? { ...updated, isDefault: false }
+      : updated;
+    const makeDefault = sanitizedUpdated.isDefault === true;
     setBankAccounts((prev) => {
       const next = prev.map((acc) => {
         if (acc.id === id) {
-          const mod = { ...acc, ...updated };
+          const mod = { ...acc, ...sanitizedUpdated };
+          if (mod.owner === 'Joint') mod.isDefault = false;
           setDoc(doc(db, 'bank_accounts', id), sanitizeForFirestore(mod)).catch(() => {});
           return mod;
         }
@@ -1271,9 +1296,11 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   const setDefaultBankAccount = (id: string) => {
+    const target = bankAccounts.find((a) => a.id === id);
+    if (!target || target.owner === 'Joint') return;
     setBankAccounts((prev) => {
       const next = prev.map((acc) => {
-        const shouldBe = acc.id === id;
+        const shouldBe = acc.id === id && acc.owner !== 'Joint';
         if (Boolean(acc.isDefault) !== shouldBe) {
           const mod = { ...acc, isDefault: shouldBe };
           setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(mod)).catch(() => {});
@@ -1291,9 +1318,13 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   const deleteBankAccount = (id: string) => {
     setBankAccounts((prev) => {
       const filtered = prev.filter((acc) => acc.id !== id);
-      if (filtered.length > 0 && !filtered.some((a) => a.isDefault)) {
-        filtered[0] = { ...filtered[0], isDefault: true };
-        setDoc(doc(db, 'bank_accounts', filtered[0].id), sanitizeForFirestore(filtered[0])).catch(() => {});
+      const personalRemaining = filtered.filter((a) => a.owner !== 'Joint');
+      if (personalRemaining.length > 0 && !personalRemaining.some((a) => a.isDefault)) {
+        const firstPersonalIdx = filtered.findIndex((a) => a.owner !== 'Joint');
+        if (firstPersonalIdx >= 0) {
+          filtered[firstPersonalIdx] = { ...filtered[firstPersonalIdx], isDefault: true };
+          setDoc(doc(db, 'bank_accounts', filtered[firstPersonalIdx].id), sanitizeForFirestore(filtered[firstPersonalIdx])).catch(() => {});
+        }
       }
       try {
         localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(filtered));
@@ -1693,10 +1724,11 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     const netSavings = totalIncome - totalOutflow;
     const savingsRate = totalIncome > 0 ? Math.round((netSavings / totalIncome) * 100) : 0;
 
-    // Bank Balances
+    // Bank Balances (Exclude Joint accounts — Joint money is tracked exclusively on Family Savings page)
     const relevantAccounts = bankAccounts.filter((acc) => {
+      if (acc.owner === 'Joint') return false;
       if (!personFilter) return true;
-      return acc.owner === personFilter || acc.owner === 'Joint';
+      return acc.owner === personFilter;
     });
     const bankBalance = relevantAccounts.reduce((sum, acc) => sum + acc.currentBalance, 0);
 
@@ -1990,6 +2022,8 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         dailyNotes,
         isLiveSyncing,
         defaultBankAccount,
+        jointSavingsAccounts,
+        familySavingsBalance,
         deviceId,
         notifyPartnerTransactions,
         setNotifyPartnerTransactions,

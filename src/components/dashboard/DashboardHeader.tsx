@@ -1,7 +1,7 @@
 import React from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { NavTab } from '../navigation/Sidebar';
-import { Lock, Plus, Settings, LogOut, CalendarDays } from 'lucide-react';
+import { Lock, Plus, Settings, LogOut, CalendarDays, Landmark } from 'lucide-react';
 
 interface DashboardHeaderProps {
   currentTab: NavTab;
@@ -20,6 +20,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
     { id: 'dashboard', label: 'Home' },
     { id: 'transactions', label: 'History' },
     { id: 'accounts', label: 'Accounts' },
+    { id: 'savings', label: 'Savings' },
     { id: 'emis', label: 'Loans' },
     { id: 'notes', label: 'Notes' },
     { id: 'reports', label: 'Reports' },
@@ -95,10 +96,24 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 
           <button
             type="button"
+            onClick={() => onSelectTab('emis')}
+            aria-label="Loans & EMIs"
+            title="Loans & EMIs"
+            className={`md:hidden min-w-[38px] min-h-[38px] rounded-xl flex items-center justify-center transition cursor-pointer ${
+              currentTab === 'emis'
+                ? 'bg-slate-900 text-white'
+                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <Landmark className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
             onClick={() => onSelectTab('notes')}
             aria-label="Daily Notes & Calendar"
             title="Daily Notes & Calendar"
-            className={`md:hidden min-w-[40px] min-h-[40px] rounded-xl flex items-center justify-center transition cursor-pointer ${
+            className={`md:hidden min-w-[38px] min-h-[38px] rounded-xl flex items-center justify-center transition cursor-pointer ${
               currentTab === 'notes'
                 ? 'bg-slate-900 text-white'
                 : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
@@ -112,7 +127,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             onClick={() => onSelectTab('settings')}
             aria-label="Settings"
             title="Settings"
-            className="md:hidden min-w-[40px] min-h-[40px] rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 flex items-center justify-center transition cursor-pointer"
+            className="md:hidden min-w-[38px] min-h-[38px] rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 flex items-center justify-center transition cursor-pointer"
           >
             <Settings className="w-4 h-4" />
           </button>

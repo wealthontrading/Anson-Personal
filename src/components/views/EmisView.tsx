@@ -53,11 +53,11 @@ export const EmisView: React.FC<EmisViewProps> = ({
   const [deleteTargetLoan, setDeleteTargetLoan] = useState<Loan | null>(null);
   const [deleteTargetTx, setDeleteTargetTx] = useState<Transaction | null>(null);
 
-  const today = new Date();
-  const currentDay = today.getDate();
+  const todayKey = formatDateToISO(new Date());
 
   // Compute live schedule & status for every loan across all accounts
   const enrichedLoans = useMemo(() => {
+    const today = new Date();
     const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     return loans.map((l) => {
       const freq = getLoanFrequency(l);
@@ -91,7 +91,7 @@ export const EmisView: React.FC<EmisViewProps> = ({
         paidAmountCalc: getLoanPaidAmount(l, transactions),
       };
     });
-  }, [loans, transactions, bankAccounts, today]);
+  }, [loans, transactions, bankAccounts, todayKey]);
 
   const goldLoans = enrichedLoans.filter((l) => l.type === 'gold_loan');
   const regularLoans = enrichedLoans.filter((l) => l.type !== 'gold_loan');
@@ -344,22 +344,22 @@ export const EmisView: React.FC<EmisViewProps> = ({
           </div>
 
           {goldLoans.length > 0 && (
-            <div className="grid grid-cols-3 gap-3">
-              <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80 min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Gold Loan Amount</p>
-                <p className="text-base sm:text-lg font-black text-slate-900 mt-0.5 tabular-nums">
+                <p className="text-base sm:text-lg font-black text-slate-900 mt-0.5 tabular-nums truncate">
                   {formatINR(goldTotalAmount)}
                 </p>
               </div>
-              <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80">
+              <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80 min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Total Interest</p>
-                <p className="text-base sm:text-lg font-black text-amber-900 mt-0.5 tabular-nums">
+                <p className="text-base sm:text-lg font-black text-amber-900 mt-0.5 tabular-nums truncate">
                   {formatINR(goldTotalInterest)}
                 </p>
               </div>
-              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80">
+              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">Paid Amount</p>
-                <p className="text-base sm:text-lg font-black text-emerald-700 mt-0.5 tabular-nums">
+                <p className="text-base sm:text-lg font-black text-emerald-700 mt-0.5 tabular-nums truncate">
                   {formatINR(goldTotalPaid)}
                 </p>
               </div>
