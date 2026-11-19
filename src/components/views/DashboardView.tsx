@@ -8,10 +8,13 @@ import {
   doesNoteAppearOnDate,
   formatReminderTime12h,
   getDaysUntilNextNoteDate,
+  getInsuranceScheduledAmount,
   getLoanFrequency,
   getLoanScheduledPaymentAmount,
+  getNextDueDateForInsurance,
   getNextDueDateForLoan,
   getNotificationPermission,
+  isInsuranceCyclePaid,
   isLoanCyclePaid,
   isNotificationSupported,
   requestNotificationPermission,
@@ -44,6 +47,8 @@ import {
   Circle,
   Cake,
   Heart,
+  HeartPulse,
+  HandCoins,
   PiggyBank,
 } from 'lucide-react';
 import { Transaction } from '../../types/finance';
@@ -73,6 +78,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     selectedMonth,
     setSelectedMonth,
     loans,
+    healthInsurances,
     dailyNotes,
     toggleDailyNoteComplete,
     categoryColors,
@@ -129,6 +135,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       if (isPaid) return false;
       const diffDays = Math.round((nextDue.getTime() - todayMidnight.getTime()) / 86400000);
       return diffDays <= 15 || nextDue.getMonth() === today.getMonth();
+    });
+
+  const upcomingInsurances = healthInsurances
+    .filter((p) => {
+      if (p.status === 'expired') return false;
+      if (activeDashboard === 'Anson' && p.owner === 'Dona') return false;
+      if (activeDashboard === 'Dona' && p.owner === 'Anson') return false;
+      return true;
+    })
+    .filter((p) => {
+      const nextDue = getNextDueDateForInsurance(p, transactions, today);
+      if (isInsuranceCyclePaid(p, nextDue, transactions)) return false;
+      const diffDays = Math.round((nextDue.getTime() - todayMidnight.getTime()) / 86400000);
+      return diffDays <= 10 || nextDue.getMonth() === today.getMonth();
     });
 
   const spentPercent =
@@ -249,31 +269,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <PiggyBank className="w-3.5 h-3.5 text-emerald-600" />
               <span>Savings</span>
             </button>
+            <button
+              type="button"
+              onClick={() => onSelectTab('insurance')}
+              className="min-h-[38px] px-3 py-1.5 rounded-xl bg-teal-50/70 hover:bg-teal-100/80 border border-teal-200/70 text-xs font-bold text-teal-800 inline-flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <HeartPulse className="w-3.5 h-3.5 text-teal-600" />
+              <span>Health Ins.</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectTab('borrow_lend')}
+              className="min-h-[38px] px-3 py-1.5 rounded-xl bg-amber-50/70 hover:bg-amber-100/80 border border-amber-200/70 text-xs font-bold text-amber-900 inline-flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <HandCoins className="w-3.5 h-3.5 text-amber-700" />
+              <span>Borrow/Lend</span>
+            </button>
           </div>
         </div>
 
-        {/* Clean 3-column Monthly Summary */}
-        <div className="grid grid-cols-3 gap-3 pt-4 tabular-nums">
+        {/* Clean 2-column Monthly Summary (Income & Expense) */}
+        <div className="grid grid-cols-2 gap-4 pt-4 tabular-nums">
           <div>
-            <p className="text-[11px] sm:text-xs font-semibold text-slate-500">Income</p>
-            <p className="text-base sm:text-xl font-extrabold text-emerald-600 mt-0.5 truncate">
+            <p className="text-xs font-semibold text-slate-500">Income</p>
+            <p className="text-lg sm:text-2xl font-extrabold text-emerald-600 mt-0.5 truncate">
               {formatINR(currentSummary.totalIncome)}
             </p>
           </div>
           <div>
-            <p className="text-[11px] sm:text-xs font-semibold text-slate-500">Spent</p>
-            <p className="text-base sm:text-xl font-extrabold text-rose-600 mt-0.5 truncate">
+            <p className="text-xs font-semibold text-slate-500">Expense</p>
+            <p className="text-lg sm:text-2xl font-extrabold text-rose-600 mt-0.5 truncate">
               {formatINR(currentSummary.totalExpenses)}
-            </p>
-          </div>
-          <div>
-            <p className="text-[11px] sm:text-xs font-semibold text-slate-500">Saved</p>
-            <p
-              className={`text-base sm:text-xl font-extrabold mt-0.5 truncate ${
-                currentSummary.netSavings >= 0 ? 'text-slate-900' : 'text-rose-600'
-              }`}
-            >
-              {formatINR(currentSummary.netSavings)}
             </p>
           </div>
         </div>
@@ -282,7 +308,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="mt-4 pt-3 border-t border-slate-100">
             <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1.5 tabular-nums">
               <span>{spentPercent}% of income spent</span>
-              <span className="font-semibold text-emerald-700">{currentSummary.savingsRate}% saved</span>
+              <span className="font-semibold text-slate-700">
+                {formatINR(currentSummary.totalExpenses)} / {formatINR(currentSummary.totalIncome)}
+              </span>
             </div>
             <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
               <div
@@ -403,6 +431,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             className="min-h-[40px] px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shrink-0 transition cursor-pointer"
           >
             Pay Now
+          </button>
+        </div>
+      )}
+
+      {/* Row 4b2: Upcoming Health Insurance EMI Alert (only when due) */}
+      {upcomingInsurances.length > 0 && (
+        <div className="p-4 rounded-2xl bg-teal-50/90 border border-teal-200/80 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0">
+              <HeartPulse className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm font-bold text-teal-950">
+                Health Insurance EMI Due
+              </p>
+              <p className="text-xs text-teal-800 truncate tabular-nums">
+                {upcomingInsurances
+                  .map((p) => `${p.policyName} (${formatINR(getInsuranceScheduledAmount(p))})`)
+                  .join(' · ')}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onSelectTab('insurance')}
+            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shrink-0 transition cursor-pointer"
+          >
+            Open
           </button>
         </div>
       )}

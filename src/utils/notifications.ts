@@ -1,5 +1,13 @@
-import { DailyNote, Loan, PaymentFrequency, Person, Transaction } from '../types/finance';
-import { CATEGORY_DETAILS, INCOME_SOURCE_DETAILS, formatDateDDMMYYYY, formatINR } from './formatters';
+import {
+  BorrowLendRecord,
+  DailyNote,
+  HealthInsurancePolicy,
+  Loan,
+  PaymentFrequency,
+  Person,
+  Transaction,
+} from '../types/finance';
+import { CATEGORY_DETAILS, INCOME_SOURCE_DETAILS, formatDateDDMMYYYY, formatINR, formatMonthName } from './formatters';
 
 export type EmiReminderSlotId = '06:00' | '12:00' | '22:00';
 
@@ -644,6 +652,189 @@ export async function checkAndTriggerEmiReminders(params: {
 }
 
 // ==========================================
+// SEPARATE LOAN COMMITMENTS (MONTHLY / QUARTERLY / YEARLY)
+// & 1ST OF EVERY MONTH ALL-ACCOUNTS NOTIFICATION
+// ==========================================
+
+const FIRST_OF_MONTH_COMMITMENT_LOG_KEY = 'anson_dona_first_of_month_emi_v1';
+
+export interface FrequencyCommitmentGroup {
+  total: number;
+  count: number;
+  loans: Loan[];
+}
+
+export interface LoanCommitmentBreakdown {
+  monthly: FrequencyCommitmentGroup;
+  quarterly: FrequencyCommitmentGroup;
+  yearly: FrequencyCommitmentGroup;
+  dueThisMonthTotal: number;
+  dueThisMonthCount: number;
+  monthlyByOwner: {
+    Anson: number;
+    Dona: number;
+  };
+}
+
+export function calculateLoanCommitments(
+  loans: Loan[],
+  transactions: Transaction[] = [],
+  now: Date = new Date()
+): LoanCommitmentBreakdown {
+  const activeLoans = loans.filter((l) => l.status !== 'closed');
+
+  const monthlyLoans: Loan[] = [];
+  const quarterlyLoans: Loan[] = [];
+  const yearlyLoans: Loan[] = [];
+
+  let monthlyTotal = 0;
+  let quarterlyTotal = 0;
+  let yearlyTotal = 0;
+  let dueThisMonthTotal = 0;
+  let dueThisMonthCount = 0;
+  let ansonMonthly = 0;
+  let donaMonthly = 0;
+
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  activeLoans.forEach((loan) => {
+    const freq = getLoanFrequency(loan);
+    const scheduledAmt = getLoanScheduledPaymentAmount(loan, freq);
+
+    if (freq === 'monthly') {
+      monthlyLoans.push(loan);
+      monthlyTotal += scheduledAmt;
+      if (loan.owner === 'Anson') ansonMonthly += scheduledAmt;
+      if (loan.owner === 'Dona') donaMonthly += scheduledAmt;
+      dueThisMonthTotal += scheduledAmt;
+      dueThisMonthCount += 1;
+    } else if (freq === 'quarterly') {
+      quarterlyLoans.push(loan);
+      quarterlyTotal += scheduledAmt;
+      const nextDue = getNextDueDateForLoan(loan, transactions, now);
+      if (nextDue.getFullYear() === currentYear && nextDue.getMonth() === currentMonth) {
+        dueThisMonthTotal += scheduledAmt;
+        dueThisMonthCount += 1;
+      }
+    } else {
+      yearlyLoans.push(loan);
+      yearlyTotal += scheduledAmt;
+      const nextDue = getNextDueDateForLoan(loan, transactions, now);
+      if (nextDue.getFullYear() === currentYear && nextDue.getMonth() === currentMonth) {
+        dueThisMonthTotal += scheduledAmt;
+        dueThisMonthCount += 1;
+      }
+    }
+  });
+
+  return {
+    monthly: { total: monthlyTotal, count: monthlyLoans.length, loans: monthlyLoans },
+    quarterly: { total: quarterlyTotal, count: quarterlyLoans.length, loans: quarterlyLoans },
+    yearly: { total: yearlyTotal, count: yearlyLoans.length, loans: yearlyLoans },
+    dueThisMonthTotal,
+    dueThisMonthCount,
+    monthlyByOwner: {
+      Anson: ansonMonthly,
+      Dona: donaMonthly,
+    },
+  };
+}
+
+export function buildFirstOfMonthCommitmentNotification(
+  loans: Loan[],
+  transactions: Transaction[] = [],
+  now: Date = new Date()
+): { title: string; body: string; hasCommitments: boolean } {
+  const breakdown = calculateLoanCommitments(loans, transactions, now);
+  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const monthLabel = formatMonthName(ym);
+
+  const hasMonthly = breakdown.monthly.count > 0;
+  const hasAny =
+    breakdown.monthly.count > 0 || breakdown.quarterly.count > 0 || breakdown.yearly.count > 0;
+
+  if (!hasAny) {
+    return {
+      title: `Monthly Loan Commitment (${monthLabel})`,
+      body: 'No active loan commitments scheduled across Anson & Dona accounts this month.',
+      hasCommitments: false,
+    };
+  }
+
+  const title = `Monthly Commitment Reminder — ${monthLabel}`;
+  const parts: string[] = [];
+
+  if (hasMonthly) {
+    parts.push(
+      `Monthly: ${formatINR(breakdown.monthly.total)} (${breakdown.monthly.count} ${
+        breakdown.monthly.count === 1 ? 'loan' : 'loans'
+      })`
+    );
+  }
+  if (breakdown.quarterly.count > 0) {
+    parts.push(`Quarterly: ${formatINR(breakdown.quarterly.total)}/qtr`);
+  }
+  if (breakdown.yearly.count > 0) {
+    parts.push(`Yearly: ${formatINR(breakdown.yearly.total)}/yr`);
+  }
+
+  const ownerParts: string[] = [];
+  if (breakdown.monthlyByOwner.Anson > 0) {
+    ownerParts.push(`Anson ${formatINR(breakdown.monthlyByOwner.Anson)}`);
+  }
+  if (breakdown.monthlyByOwner.Dona > 0) {
+    ownerParts.push(`Dona ${formatINR(breakdown.monthlyByOwner.Dona)}`);
+  }
+
+  const ownerSuffix = ownerParts.length > 0 ? ` · All Accounts (${ownerParts.join(', ')})` : ' · All Accounts';
+
+  return {
+    title,
+    body: `${parts.join(' | ')}${ownerSuffix}`,
+    hasCommitments: true,
+  };
+}
+
+export async function checkAndTriggerFirstOfMonthCommitmentNotification(params: {
+  loans: Loan[];
+  transactions: Transaction[];
+  enabled: boolean;
+  onInAppNotify?: (payload: AppNotificationPayload) => void;
+}): Promise<boolean> {
+  const { loans, transactions, enabled, onInAppNotify } = params;
+  if (!enabled || loans.length === 0) return false;
+
+  const now = new Date();
+  // Only auto-trigger on the 1st day of the month (from 6:00 AM onwards)
+  if (now.getDate() !== 1) return false;
+  if (now.getHours() < 6) return false;
+
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  try {
+    const lastSentMonth = localStorage.getItem(FIRST_OF_MONTH_COMMITMENT_LOG_KEY);
+    if (lastSentMonth === monthKey) return false;
+  } catch {}
+
+  const { title, body, hasCommitments } = buildFirstOfMonthCommitmentNotification(loans, transactions, now);
+  if (!hasCommitments) return false;
+
+  try {
+    localStorage.setItem(FIRST_OF_MONTH_COMMITMENT_LOG_KEY, monthKey);
+  } catch {}
+
+  await showPhoneNotification({
+    title,
+    body,
+    tag: `first-of-month-emi-${monthKey}`,
+    kind: 'emi_reminder',
+    onInAppNotify,
+  });
+
+  return true;
+}
+
+// ==========================================
 // DAILY NOTES, JOURNEY & SPECIAL DATE REMINDERS
 // ==========================================
 
@@ -880,3 +1071,272 @@ export async function checkAndTriggerNoteReminders(params: {
 
   return sentCount;
 }
+
+// ==========================================
+// HEALTH INSURANCE EMI REMINDERS
+// ==========================================
+
+const INSURANCE_REMINDER_LOG_KEY = 'anson_dona_health_ins_rem_v1';
+const BORROW_LEND_REMINDER_LOG_KEY = 'anson_dona_borrow_lend_rem_v1';
+
+export function getInsuranceScheduledAmount(policy: HealthInsurancePolicy): number {
+  const freq = policy.paymentFrequency || 'monthly';
+  if (freq === 'yearly') {
+    return Math.round(policy.annualPremium || policy.monthlyEmi * 12 || 0);
+  }
+  if (freq === 'quarterly') {
+    return Math.round(policy.monthlyEmi * 3 || (policy.annualPremium ? policy.annualPremium / 4 : 0));
+  }
+  return Math.round(policy.monthlyEmi || 0);
+}
+
+export function getInsuranceMonthlyEquivalent(policy: HealthInsurancePolicy): number {
+  const freq = policy.paymentFrequency || 'monthly';
+  if (freq === 'yearly') {
+    return Math.round((policy.annualPremium || policy.monthlyEmi * 12 || 0) / 12);
+  }
+  if (freq === 'quarterly') {
+    return Math.round(policy.monthlyEmi || (policy.annualPremium ? policy.annualPremium / 12 : 0));
+  }
+  return Math.round(policy.monthlyEmi || 0);
+}
+
+export function isInsuranceCyclePaid(
+  policy: HealthInsurancePolicy,
+  dueDate: Date,
+  transactions: Transaction[]
+): boolean {
+  const freq = policy.paymentFrequency || 'monthly';
+  const dueMonthStr = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}`;
+  const dueMidnight = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate()).getTime();
+
+  return transactions.some((tx) => {
+    if (tx.insurancePolicyId !== policy.id) return false;
+    if (freq === 'monthly' && (tx.date || '').startsWith(dueMonthStr)) return true;
+
+    const txDt = parseLocalDateISO(tx.date);
+    if (!txDt) return false;
+    const txMidnight = new Date(txDt.getFullYear(), txDt.getMonth(), txDt.getDate()).getTime();
+    const diffDaysFromDue = Math.round((txMidnight - dueMidnight) / 86400000);
+
+    if (freq === 'monthly') return diffDaysFromDue >= -12 && diffDaysFromDue <= 12;
+    if (freq === 'quarterly') return diffDaysFromDue >= -45 && diffDaysFromDue <= 25;
+    return diffDaysFromDue >= -90 && diffDaysFromDue <= 30;
+  });
+}
+
+export function getNextDueDateForInsurance(
+  policy: HealthInsurancePolicy,
+  transactions: Transaction[] = [],
+  now: Date = new Date()
+): Date {
+  const freq = policy.paymentFrequency || 'monthly';
+  const stepMonths = getFrequencyStepMonths(freq);
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const parsedDue = parseLocalDateISO(policy.emiDueDate);
+  const rawDueDay = Math.max(1, Math.min(31, Number(policy.emiDueDay) || parsedDue?.getDate() || 1));
+
+  let candidate: Date;
+  if (parsedDue) {
+    candidate = new Date(parsedDue.getFullYear(), parsedDue.getMonth(), parsedDue.getDate());
+  } else {
+    const daysInCurrent = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    candidate = new Date(now.getFullYear(), now.getMonth(), Math.min(rawDueDay, daysInCurrent));
+  }
+
+  let guard = 0;
+  while (guard < 240) {
+    const candidateMidnight = new Date(candidate.getFullYear(), candidate.getMonth(), candidate.getDate());
+    const diffFromToday = Math.round((candidateMidnight.getTime() - todayMidnight.getTime()) / 86400000);
+    const paid = isInsuranceCyclePaid(policy, candidateMidnight, transactions);
+
+    if (diffFromToday >= 0 && !paid) {
+      return candidateMidnight;
+    }
+    candidate = addMonthsClamped(candidateMidnight, stepMonths, rawDueDay);
+    guard++;
+  }
+
+  return candidate;
+}
+
+export interface EligibleInsuranceReminder {
+  policy: HealthInsurancePolicy;
+  daysUntilDue: number;
+  dueDate: Date;
+  dueDateStr: string;
+  scheduledAmount: number;
+}
+
+export function getEligibleInsuranceReminders(
+  policies: HealthInsurancePolicy[],
+  transactions: Transaction[],
+  now: Date = new Date()
+): EligibleInsuranceReminder[] {
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const results: EligibleInsuranceReminder[] = [];
+
+  policies.forEach((policy) => {
+    if (policy.status === 'expired') return;
+    const nextDue = getNextDueDateForInsurance(policy, transactions, now);
+    const diffDays = Math.round((nextDue.getTime() - todayMidnight.getTime()) / 86400000);
+    if (diffDays >= 0 && diffDays <= 5) {
+      if (!isInsuranceCyclePaid(policy, nextDue, transactions)) {
+        results.push({
+          policy,
+          daysUntilDue: diffDays,
+          dueDate: nextDue,
+          dueDateStr: formatDateDDMMYYYY(formatDateToISO(nextDue)),
+          scheduledAmount: getInsuranceScheduledAmount(policy),
+        });
+      }
+    }
+  });
+
+  return results;
+}
+
+function readLocalLog(key: string): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalLog(key: string, log: Record<string, number>, todayISO: string): void {
+  try {
+    const pruned: Record<string, number> = {};
+    for (const [k, v] of Object.entries(log)) {
+      if (k.includes(todayISO)) {
+        pruned[k] = v;
+      }
+    }
+    localStorage.setItem(key, JSON.stringify(pruned));
+  } catch {}
+}
+
+export async function checkAndTriggerInsuranceReminders(params: {
+  policies: HealthInsurancePolicy[];
+  transactions: Transaction[];
+  enabled: boolean;
+  onInAppNotify?: (payload: AppNotificationPayload) => void;
+}): Promise<number> {
+  const { policies, transactions, enabled, onInAppNotify } = params;
+  if (!enabled || policies.length === 0) return 0;
+
+  const now = new Date();
+  const activeSlot = getActiveEmiSlot(now);
+  if (!activeSlot) return 0;
+
+  const eligible = getEligibleInsuranceReminders(policies, transactions, now);
+  if (eligible.length === 0) return 0;
+
+  const todayISO = getLocalTodayISO(now);
+  const log = readLocalLog(INSURANCE_REMINDER_LOG_KEY);
+  let sentCount = 0;
+
+  for (const item of eligible) {
+    const dedupKey = `${item.policy.id}_${todayISO}_${activeSlot.id}`;
+    if (log[dedupKey]) continue;
+
+    log[dedupKey] = Date.now();
+    sentCount += 1;
+
+    const title =
+      item.daysUntilDue === 0
+        ? `Health Insurance EMI Due Today (${activeSlot.label}): ${item.policy.policyName}`
+        : `Health Insurance EMI in ${item.daysUntilDue} ${item.daysUntilDue === 1 ? 'day' : 'days'} (${activeSlot.label})`;
+
+    const body =
+      item.daysUntilDue === 0
+        ? `${formatINR(item.scheduledAmount)} for ${item.policy.policyName} (${item.policy.insurer}) is due today (${item.dueDateStr}).`
+        : `${item.policy.policyName} (${item.policy.insurer}) — ${formatINR(item.scheduledAmount)} due on ${item.dueDateStr}.`;
+
+    await showPhoneNotification({
+      title,
+      body,
+      tag: `health-ins-${dedupKey}`,
+      kind: 'emi_reminder',
+      onInAppNotify,
+    });
+  }
+
+  if (sentCount > 0) {
+    writeLocalLog(INSURANCE_REMINDER_LOG_KEY, log, todayISO);
+  }
+
+  return sentCount;
+}
+
+// ==========================================
+// BORROWING & LENDING DUE DATE REMINDERS
+// ==========================================
+
+export async function checkAndTriggerBorrowLendReminders(params: {
+  records: BorrowLendRecord[];
+  enabled: boolean;
+  onInAppNotify?: (payload: AppNotificationPayload) => void;
+}): Promise<number> {
+  const { records, enabled, onInAppNotify } = params;
+  if (!enabled || records.length === 0) return 0;
+
+  const now = new Date();
+  // Remind from 8:00 AM onwards
+  if (now.getHours() < 8) return 0;
+
+  const todayISO = getLocalTodayISO(now);
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const log = readLocalLog(BORROW_LEND_REMINDER_LOG_KEY);
+  let sentCount = 0;
+
+  for (const rec of records) {
+    if (rec.status === 'settled' || !rec.reminderEnabled || !rec.dueDate) continue;
+    const remaining = Math.max(0, rec.amount - (rec.paidAmount || 0));
+    if (remaining <= 0) continue;
+
+    const dueDt = parseLocalDateISO(rec.dueDate);
+    if (!dueDt) continue;
+    const dueMidnight = new Date(dueDt.getFullYear(), dueDt.getMonth(), dueDt.getDate());
+    const diffDays = Math.round((dueMidnight.getTime() - todayMidnight.getTime()) / 86400000);
+
+    // Remind 1 day before and on due date
+    if (diffDays < 0 || diffDays > 1) continue;
+
+    const dedupKey = `${rec.id}_${todayISO}`;
+    if (log[dedupKey]) continue;
+
+    log[dedupKey] = Date.now();
+    sentCount += 1;
+
+    const isLend = rec.type === 'lend';
+    const title = isLend
+      ? diffDays === 0
+        ? `Money Return Due Today from ${rec.personName}`
+        : `Money Return Tomorrow from ${rec.personName}`
+      : diffDays === 0
+      ? `Repayment Due Today to ${rec.personName}`
+      : `Repayment Due Tomorrow to ${rec.personName}`;
+
+    const body = isLend
+      ? `${formatINR(remaining)} pending to receive from ${rec.personName} (${formatDateDDMMYYYY(rec.dueDate)}).`
+      : `${formatINR(remaining)} pending to pay back to ${rec.personName} (${formatDateDDMMYYYY(rec.dueDate)}).`;
+
+    await showPhoneNotification({
+      title,
+      body,
+      tag: `borrow-lend-${dedupKey}`,
+      kind: 'note_reminder',
+      onInAppNotify,
+    });
+  }
+
+  if (sentCount > 0) {
+    writeLocalLog(BORROW_LEND_REMINDER_LOG_KEY, log, todayISO);
+  }
+
+  return sentCount;
+}
+

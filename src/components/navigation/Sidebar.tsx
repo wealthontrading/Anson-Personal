@@ -11,11 +11,23 @@ import {
   Zap,
   CalendarDays,
   PiggyBank,
+  HeartPulse,
+  HandCoins,
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 
-export type NavTab = 'dashboard' | 'transactions' | 'accounts' | 'savings' | 'emis' | 'notes' | 'reports' | 'settings';
+export type NavTab =
+  | 'dashboard'
+  | 'transactions'
+  | 'accounts'
+  | 'savings'
+  | 'emis'
+  | 'insurance'
+  | 'borrow_lend'
+  | 'notes'
+  | 'reports'
+  | 'settings';
 
 interface SidebarProps {
   currentTab: NavTab;
@@ -40,6 +52,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'accounts' as NavTab, label: 'Bank & Cash', icon: Wallet },
     { id: 'savings' as NavTab, label: 'Family Savings', icon: PiggyBank },
     { id: 'emis' as NavTab, label: 'Loans & EMIs', icon: Landmark },
+    { id: 'insurance' as NavTab, label: 'Health Insurance EMI', icon: HeartPulse },
+    { id: 'borrow_lend' as NavTab, label: 'Borrow & Lend Money', icon: HandCoins },
     { id: 'notes' as NavTab, label: 'Daily Notes & Calendar', icon: CalendarDays },
     { id: 'reports' as NavTab, label: 'Analytics & Reports', icon: BarChart3 },
     { id: 'settings' as NavTab, label: 'Settings & Security', icon: Settings },

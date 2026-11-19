@@ -161,6 +161,56 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["id", "title", "type", "date", "reminderEnabled", "completed", "person"]
+    },
+    "health_insurance": {
+      "title": "Health Insurance Policy",
+      "description": "Family and individual health insurance policies with monthly EMI setup and renewal tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "policyName": { "type": "string" },
+        "insurer": { "type": "string" },
+        "policyNumber": { "type": "string" },
+        "coveredMembers": { "type": "string" },
+        "sumInsured": { "type": "number" },
+        "monthlyEmi": { "type": "number" },
+        "annualPremium": { "type": "number" },
+        "paymentFrequency": { "type": "string", "enum": ["monthly", "quarterly", "yearly"] },
+        "emiDueDay": { "type": "number" },
+        "emiDueDate": { "type": "string" },
+        "startDate": { "type": "string" },
+        "renewalDate": { "type": "string" },
+        "owner": { "type": "string", "enum": ["Anson", "Dona", "Family"] },
+        "linkedAccountId": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "expired"] },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "policyName", "insurer", "monthlyEmi", "paymentFrequency", "emiDueDay", "owner", "status"]
+    },
+    "borrow_lend_records": {
+      "title": "Borrow & Lend Record",
+      "description": "Money lent to others (to receive) and money borrowed from others (to pay back) with partial repayment history",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["lend", "borrow"] },
+        "personName": { "type": "string" },
+        "phone": { "type": "string" },
+        "amount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "date": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "handledBy": { "type": "string", "enum": ["Anson", "Dona"] },
+        "status": { "type": "string", "enum": ["pending", "settled"] },
+        "notes": { "type": "string" },
+        "reminderEnabled": { "type": "boolean" },
+        "payments": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "type", "personName", "amount", "paidAmount", "date", "handledBy", "status"]
     }
   },
   "firestore": {
@@ -171,6 +221,14 @@
     "/daily_notes/{noteId}": {
       "schema": { "$ref": "#/entities/daily_notes" },
       "description": "Daily notes, tasks, journey entries, birthdays, wedding dates and reminders"
+    },
+    "/health_insurance/{policyId}": {
+      "schema": { "$ref": "#/entities/health_insurance" },
+      "description": "Health insurance policies and monthly EMI schedules"
+    },
+    "/borrow_lend_records/{recordId}": {
+      "schema": { "$ref": "#/entities/borrow_lend_records" },
+      "description": "Borrowing and lending money records and repayments"
     }
   }
 }

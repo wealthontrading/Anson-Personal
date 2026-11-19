@@ -7,6 +7,8 @@ import {
   LOAN_TYPE_LABELS,
 } from '../../utils/formatters';
 import {
+  buildFirstOfMonthCommitmentNotification,
+  calculateLoanCommitments,
   formatDateToISO,
   getLoanFrequency,
   getLoanPaidAmount,
@@ -14,8 +16,12 @@ import {
   getLoanScheduledPaymentAmount,
   getLoanTotalInterest,
   getNextDueDateForLoan,
+  getNotificationPermission,
   getReminderWindowStart,
   isLoanCyclePaid,
+  requestNotificationPermission,
+  showPhoneNotification,
+  unlockNotificationAudio,
 } from '../../utils/notifications';
 import { DeleteConfirmModal } from '../common/DeleteConfirmModal';
 import {
@@ -47,7 +53,15 @@ export const EmisView: React.FC<EmisViewProps> = ({
   onPayEmi,
   onEditTransaction,
 }) => {
-  const { loans, deleteLoan, transactions, deleteTransaction, bankAccounts } = useFinance();
+  const {
+    loans,
+    deleteLoan,
+    transactions,
+    deleteTransaction,
+    bankAccounts,
+    notifyEmiReminders,
+    pushInAppNotification,
+  } = useFinance();
 
   const [activeLoanTab, setActiveLoanTab] = useState<'all' | 'regular' | 'gold'>('all');
   const [deleteTargetLoan, setDeleteTargetLoan] = useState<Loan | null>(null);
@@ -97,13 +111,33 @@ export const EmisView: React.FC<EmisViewProps> = ({
   const regularLoans = enrichedLoans.filter((l) => l.type !== 'gold_loan');
 
   const totalOutstanding = loans.reduce((s, l) => s + l.outstandingPrincipal, 0);
-  const totalMonthlyCommitment = loans.reduce((s, l) => s + l.monthlyEmi, 0);
+
+  // Separate commitments by frequency (Monthly / Quarterly / Yearly) across all accounts
+  const commitments = useMemo(
+    () => calculateLoanCommitments(loans, transactions, new Date()),
+    [loans, transactions, todayKey]
+  );
 
   const goldTotalAmount = goldLoans.reduce((s, l) => s + l.originalAmount, 0);
   const goldTotalInterest = goldLoans.reduce((s, l) => s + l.totalInterestCalc, 0);
   const goldTotalPaid = goldLoans.reduce((s, l) => s + l.paidAmountCalc, 0);
 
   const emiTransactions = transactions.filter((tx) => tx.type === 'emi_payment');
+
+  const handlePreviewFirstOfMonthAlert = async () => {
+    await unlockNotificationAudio();
+    if (getNotificationPermission() === 'default') {
+      await requestNotificationPermission();
+    }
+    const { title, body } = buildFirstOfMonthCommitmentNotification(loans, transactions, new Date());
+    await showPhoneNotification({
+      title,
+      body,
+      tag: `preview-first-of-month-${Date.now()}`,
+      kind: 'emi_reminder',
+      onInAppNotify: pushInAppNotification,
+    });
+  };
 
   const handleOpenGoldSetup = () => {
     if (onOpenAddGoldLoan) {
@@ -179,8 +213,8 @@ export const EmisView: React.FC<EmisViewProps> = ({
         })}
       </div>
 
-      {/* Summary Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Top Summary Cards: Total Outstanding & Auto Reminder Status */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 text-xs font-bold uppercase tracking-wider mb-2">
             <span>Total Outstanding Loans</span>
@@ -191,19 +225,6 @@ export const EmisView: React.FC<EmisViewProps> = ({
           </p>
           <p className="text-xs text-slate-400 mt-1">
             Across {loans.length} active accounts ({goldLoans.length} gold loans)
-          </p>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs">
-          <div className="flex items-center justify-between text-slate-500 text-xs font-bold uppercase tracking-wider mb-2">
-            <span>Monthly Commitment</span>
-            <Clock className="w-4 h-4 text-amber-600" />
-          </div>
-          <p className="text-2xl font-black text-indigo-600 tracking-tight tabular-nums">
-            {formatINR(totalMonthlyCommitment)}
-          </p>
-          <p className="text-xs text-slate-400 mt-1">
-            Equivalent monthly EMI commitment
           </p>
         </div>
 
@@ -222,8 +243,115 @@ export const EmisView: React.FC<EmisViewProps> = ({
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Reminds 5 days before @ 6 AM, 12 PM &amp; 10 PM
+            5 days before @ 6 AM, 12 PM &amp; 10 PM + 1st of every month alert
           </p>
+        </div>
+      </div>
+
+      {/* Separate Commitments Breakdown: Monthly / Quarterly / Yearly (All Accounts) */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-indigo-600 shrink-0" />
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">
+                Separate Loan Commitments (All Accounts)
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Monthly, Quarterly &amp; Yearly commitments shown separately instead of combined
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handlePreviewFirstOfMonthAlert}
+            className="self-start sm:self-auto min-h-[34px] px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold inline-flex items-center gap-1.5 transition cursor-pointer shrink-0"
+          >
+            <Bell className="w-3.5 h-3.5" />
+            <span>Test 1st-of-Month Alert</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 tabular-nums">
+          {/* Monthly Commitment */}
+          <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200/80 min-w-0">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-800">
+                Monthly Commitment
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white text-indigo-700 border border-indigo-100 shrink-0">
+                {commitments.monthly.count} {commitments.monthly.count === 1 ? 'loan' : 'loans'}
+              </span>
+            </div>
+            <p className="text-xl sm:text-2xl font-black text-indigo-950 tracking-tight truncate">
+              {formatINR(commitments.monthly.total)}
+              <span className="text-xs font-semibold text-indigo-600"> / mo</span>
+            </p>
+            <p className="text-[11px] text-indigo-700 mt-1.5 truncate">
+              {commitments.monthly.count > 0
+                ? `Anson: ${formatINR(commitments.monthlyByOwner.Anson)} · Dona: ${formatINR(commitments.monthlyByOwner.Dona)}`
+                : 'No monthly EMIs active'}
+            </p>
+          </div>
+
+          {/* Quarterly Commitment */}
+          <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 min-w-0">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">
+                Quarterly Commitment
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white text-amber-800 border border-amber-200/70 shrink-0">
+                {commitments.quarterly.count} {commitments.quarterly.count === 1 ? 'loan' : 'loans'}
+              </span>
+            </div>
+            <p className="text-xl sm:text-2xl font-black text-amber-950 tracking-tight truncate">
+              {formatINR(commitments.quarterly.total)}
+              <span className="text-xs font-semibold text-amber-700"> / qtr</span>
+            </p>
+            <p className="text-[11px] text-amber-800 mt-1.5 truncate">
+              {commitments.quarterly.count > 0
+                ? 'Every 3 months (Gold Loans & quarterly EMIs)'
+                : 'No quarterly loans active'}
+            </p>
+          </div>
+
+          {/* Yearly Commitment */}
+          <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 min-w-0">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">
+                Yearly Commitment
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white text-emerald-700 border border-emerald-200/70 shrink-0">
+                {commitments.yearly.count} {commitments.yearly.count === 1 ? 'loan' : 'loans'}
+              </span>
+            </div>
+            <p className="text-xl sm:text-2xl font-black text-emerald-950 tracking-tight truncate">
+              {formatINR(commitments.yearly.total)}
+              <span className="text-xs font-semibold text-emerald-700"> / yr</span>
+            </p>
+            <p className="text-[11px] text-emerald-800 mt-1.5 truncate">
+              {commitments.yearly.count > 0
+                ? 'Annual installment commitment'
+                : 'No yearly loans active'}
+            </p>
+          </div>
+        </div>
+
+        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2 flex-wrap text-xs">
+          <div className="flex items-center gap-2 text-slate-700">
+            <Bell className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+            <span>
+              <strong>1st of Every Month Alert:</strong> Auto-notifies all accounts with your Monthly Commitment ({formatINR(commitments.monthly.total)}) on the 1st of each month.
+            </span>
+          </div>
+          <span
+            className={`text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${
+              notifyEmiReminders ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+            }`}
+          >
+            {notifyEmiReminders ? 'Active for All Accounts' : 'Paused in Settings'}
+          </span>
         </div>
       </div>
 

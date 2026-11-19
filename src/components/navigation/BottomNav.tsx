@@ -24,6 +24,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   const isMoreActive =
     currentTab === 'savings' ||
     currentTab === 'emis' ||
+    currentTab === 'insurance' ||
+    currentTab === 'borrow_lend' ||
     currentTab === 'notes' ||
     currentTab === 'reports' ||
     currentTab === 'settings';

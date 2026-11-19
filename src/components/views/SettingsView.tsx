@@ -3,6 +3,7 @@ import { useFinance } from '../../context/FinanceContext';
 import { ExpenseCategory, Person } from '../../types/finance';
 import { CATEGORY_DETAILS, COLOR_PALETTE_OPTIONS, formatINR, getCategoryColor } from '../../utils/formatters';
 import {
+  buildFirstOfMonthCommitmentNotification,
   getNotificationPermission,
   isNotificationSupported,
   playNotificationSound,
@@ -52,6 +53,7 @@ export const SettingsView: React.FC = () => {
     setNotificationSoundEnabled,
     pushInAppNotification,
     loans,
+    transactions,
   } = useFinance();
 
   const [ansonPinInput, setAnsonPinInput] = useState<string>('');
@@ -204,12 +206,12 @@ export const SettingsView: React.FC = () => {
             <div>
               <div className="flex items-center gap-1.5">
                 <p className="text-xs font-bold text-slate-900">
-                  EMI Due Date Reminders (5 days before &amp; due date)
+                  EMI Due Date &amp; 1st-of-Month Commitment Reminders
                 </p>
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1 flex-wrap">
                 <Clock className="w-3 h-3 text-indigo-600 shrink-0" />
-                <span>Reminds 3 times daily at <strong>6:00 AM</strong>, <strong>12:00 PM</strong> &amp; <strong>10:00 PM</strong> until paid.</span>
+                <span>Reminds 5 days before &amp; due date at <strong>6:00 AM</strong>, <strong>12:00 PM</strong> &amp; <strong>10:00 PM</strong>, plus a <strong>1st of every month</strong> Monthly Commitment alert for all accounts.</span>
               </p>
             </div>
             <input
@@ -315,6 +317,28 @@ export const SettingsView: React.FC = () => {
             className="min-h-[38px] px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition cursor-pointer"
           >
             Test EMI Reminder
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              await unlockNotificationAudio();
+              if (notifPermission === 'default') {
+                const res = await requestNotificationPermission();
+                setNotifPermission(res);
+              }
+              const { title, body } = buildFirstOfMonthCommitmentNotification(loans, transactions, new Date());
+              await showPhoneNotification({
+                title,
+                body,
+                tag: `test-first-of-month-${Date.now()}`,
+                kind: 'emi_reminder',
+                onInAppNotify: pushInAppNotification,
+              });
+            }}
+            className="min-h-[38px] px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold transition cursor-pointer"
+          >
+            Test 1st-of-Month Alert
           </button>
 
           <button

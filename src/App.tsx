@@ -15,6 +15,8 @@ import { TransactionsView } from './components/views/TransactionsView';
 import { AccountsView } from './components/views/AccountsView';
 import { FamilySavingsView } from './components/views/FamilySavingsView';
 import { EmisView } from './components/views/EmisView';
+import { HealthInsuranceView } from './components/views/HealthInsuranceView';
+import { BorrowLendView } from './components/views/BorrowLendView';
 import { DailyNotesView } from './components/views/DailyNotesView';
 import { ReportsView } from './components/views/ReportsView';
 import { SettingsView } from './components/views/SettingsView';
@@ -27,12 +29,24 @@ import { TransferMoneyModal } from './components/modals/TransferMoneyModal';
 import { PayEmiModal } from './components/modals/PayEmiModal';
 import { AddEditAccountModal } from './components/modals/AddEditAccountModal';
 import { AddEditLoanModal } from './components/modals/AddEditLoanModal';
+import { AddEditHealthInsuranceModal } from './components/modals/AddEditHealthInsuranceModal';
+import { AddEditBorrowLendModal } from './components/modals/AddEditBorrowLendModal';
 import { AddEditNoteModal } from './components/modals/AddEditNoteModal';
 import { BudgetManagementModal } from './components/modals/BudgetManagementModal';
 import { ReceiptViewerModal } from './components/common/ReceiptViewerModal';
 import { OfflineIndicator } from './components/common/OfflineIndicator';
 import { NotificationBanner } from './components/common/NotificationBanner';
-import { BankAccount, DailyNote, Loan, LoanType, NoteType, Transaction } from './types/finance';
+import {
+  BankAccount,
+  BorrowLendRecord,
+  BorrowLendType,
+  DailyNote,
+  HealthInsurancePolicy,
+  Loan,
+  LoanType,
+  NoteType,
+  Transaction,
+} from './types/finance';
 
 export type ModalType =
   | 'quick'
@@ -45,17 +59,34 @@ export type ModalType =
   | 'edit_account'
   | 'add_loan'
   | 'edit_loan'
+  | 'add_insurance'
+  | 'edit_insurance'
+  | 'add_borrow_lend'
+  | 'edit_borrow_lend'
   | 'add_note'
   | 'edit_note'
   | 'receipt'
   | 'more_menu'
   | null;
 
+const VALID_TABS: NavTab[] = [
+  'dashboard',
+  'transactions',
+  'accounts',
+  'savings',
+  'emis',
+  'insurance',
+  'borrow_lend',
+  'notes',
+  'reports',
+  'settings',
+];
+
 function MainApp() {
   const [currentTab, setCurrentTab] = useState<NavTab>(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.replace('#', '').split('-')[0];
-      if (['dashboard', 'transactions', 'accounts', 'savings', 'emis', 'notes', 'reports', 'settings'].includes(hash)) {
+      if (VALID_TABS.includes(hash as NavTab)) {
         return hash as NavTab;
       }
     }
@@ -78,6 +109,9 @@ function MainApp() {
   const [editingNote, setEditingNote] = useState<DailyNote | null>(null);
   const [presetNoteDate, setPresetNoteDate] = useState<string | undefined>(undefined);
   const [presetNoteType, setPresetNoteType] = useState<NoteType | undefined>(undefined);
+  const [editingInsurance, setEditingInsurance] = useState<HealthInsurancePolicy | null>(null);
+  const [editingBorrowLend, setEditingBorrowLend] = useState<BorrowLendRecord | null>(null);
+  const [presetBorrowLendType, setPresetBorrowLendType] = useState<BorrowLendType>('lend');
   const [receiptData, setReceiptData] = useState<{ imgUrl?: string; title: string }>({ title: '' });
 
   const modalHistoryPushedRef = useRef(false);
@@ -123,6 +157,8 @@ function MainApp() {
     setEditingNote(null);
     setPresetNoteDate(undefined);
     setPresetNoteType(undefined);
+    setEditingInsurance(null);
+    setEditingBorrowLend(null);
     setPresetLoanId(undefined);
     setPresetLoanType(undefined);
     setReturnToPayEmi(false);
@@ -143,6 +179,16 @@ function MainApp() {
         setCurrentTab('emis');
         if (typeof window !== 'undefined') {
           window.history.replaceState({ tab: 'emis', isModal: false }, '', '#emis');
+        }
+      } else if (closedType === 'add_insurance' || closedType === 'edit_insurance') {
+        setCurrentTab('insurance');
+        if (typeof window !== 'undefined') {
+          window.history.replaceState({ tab: 'insurance', isModal: false }, '', '#insurance');
+        }
+      } else if (closedType === 'add_borrow_lend' || closedType === 'edit_borrow_lend') {
+        setCurrentTab('borrow_lend');
+        if (typeof window !== 'undefined') {
+          window.history.replaceState({ tab: 'borrow_lend', isModal: false }, '', '#borrow_lend');
         }
       } else if (closedType === 'add_note' || closedType === 'edit_note') {
         setCurrentTab('notes');
@@ -183,6 +229,8 @@ function MainApp() {
       setEditingNote(null);
       setPresetNoteDate(undefined);
       setPresetNoteType(undefined);
+      setEditingInsurance(null);
+      setEditingBorrowLend(null);
       setPresetLoanId(undefined);
       setPresetLoanType(undefined);
       setReturnToPayEmi(false);
@@ -221,6 +269,8 @@ function MainApp() {
           setEditingNote(null);
           setPresetNoteDate(undefined);
           setPresetNoteType(undefined);
+          setEditingInsurance(null);
+          setEditingBorrowLend(null);
           setPresetLoanId(undefined);
           return;
         }
@@ -229,7 +279,7 @@ function MainApp() {
           setCurrentTab(event.state.tab);
         } else {
           const cleanHash = window.location.hash.replace('#', '').split('-')[0];
-          if (['dashboard', 'transactions', 'accounts', 'savings', 'emis', 'notes', 'reports', 'settings'].includes(cleanHash)) {
+          if (VALID_TABS.includes(cleanHash as NavTab)) {
             setCurrentTab(cleanHash as NavTab);
           } else {
             setCurrentTab('dashboard');
@@ -339,6 +389,28 @@ function MainApp() {
     openModal('edit_note');
   };
 
+  const handleOpenAddInsurance = () => {
+    setEditingInsurance(null);
+    openModal('add_insurance');
+  };
+
+  const handleOpenEditInsurance = (policy: HealthInsurancePolicy) => {
+    setEditingInsurance(policy);
+    openModal('edit_insurance');
+  };
+
+  const handleOpenAddBorrowLend = (type: BorrowLendType) => {
+    setEditingBorrowLend(null);
+    setPresetBorrowLendType(type);
+    openModal('add_borrow_lend');
+  };
+
+  const handleOpenEditBorrowLend = (record: BorrowLendRecord) => {
+    setEditingBorrowLend(record);
+    setPresetBorrowLendType(record.type);
+    openModal('edit_borrow_lend');
+  };
+
   const handleViewReceipt = (imgUrl: string, title: string) => {
     setReceiptData({ imgUrl, title });
     openModal('receipt');
@@ -404,6 +476,21 @@ function MainApp() {
             onEditLoan={handleOpenEditLoan}
             onPayEmi={handlePayEmiForLoan}
             onEditTransaction={handleEditTx}
+          />
+        )}
+
+        {currentTab === 'insurance' && (
+          <HealthInsuranceView
+            onOpenAddPolicy={handleOpenAddInsurance}
+            onEditPolicy={handleOpenEditInsurance}
+            onEditTransaction={handleEditTx}
+          />
+        )}
+
+        {currentTab === 'borrow_lend' && (
+          <BorrowLendView
+            onOpenAddRecord={handleOpenAddBorrowLend}
+            onEditRecord={handleOpenEditBorrowLend}
           />
         )}
 
@@ -494,6 +581,19 @@ function MainApp() {
         onClose={closeModal}
         editLoanData={editingLoan}
         presetLoanType={presetLoanType}
+      />
+
+      <AddEditHealthInsuranceModal
+        isOpen={activeModal === 'add_insurance' || activeModal === 'edit_insurance'}
+        onClose={closeModal}
+        editPolicy={editingInsurance}
+      />
+
+      <AddEditBorrowLendModal
+        isOpen={activeModal === 'add_borrow_lend' || activeModal === 'edit_borrow_lend'}
+        onClose={closeModal}
+        editRecord={editingBorrowLend}
+        presetType={presetBorrowLendType}
       />
 
       <AddEditNoteModal

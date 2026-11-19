@@ -29,6 +29,12 @@ service cloud.firestore {
     match /daily_notes/{document=**} {
       allow read, write: if true;
     }
+    match /health_insurance/{document=**} {
+      allow read, write: if true;
+    }
+    match /borrow_lend_records/{document=**} {
+      allow read, write: if true;
+    }
     match /{document=**} {
       allow read, write: if true;
     }

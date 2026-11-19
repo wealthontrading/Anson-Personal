@@ -121,6 +121,8 @@ export interface Transaction {
   notes?: string;
   receiptImage?: string; // data URL
   loanId?: string; // If related to EMI payment
+  insurancePolicyId?: string; // If related to Health Insurance EMI payment
+  borrowLendId?: string; // If related to Borrow/Lend record or repayment
   paymentFrequency?: PaymentFrequency; // Monthly, quarterly, or yearly EMI payment option
   interestAmount?: number; // Interest portion paid in an EMI / Gold Loan payment
   transferType?: TransferType;
@@ -184,6 +186,57 @@ export interface DailyNote {
   person: Person;
   createdByDevice?: string;
   updatedByDevice?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface HealthInsurancePolicy {
+  id: string;
+  policyName: string;
+  insurer: string;
+  policyNumber?: string;
+  coveredMembers: string;
+  sumInsured: number;
+  monthlyEmi: number;
+  annualPremium?: number;
+  paymentFrequency: PaymentFrequency;
+  emiDueDay: number; // 1 - 31
+  emiDueDate?: string; // YYYY-MM-DD
+  startDate: string; // YYYY-MM-DD
+  renewalDate?: string; // YYYY-MM-DD
+  owner: 'Anson' | 'Dona' | 'Family';
+  linkedAccountId?: string;
+  status: 'active' | 'expired';
+  notes?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type BorrowLendType = 'lend' | 'borrow';
+
+export interface BorrowLendPayment {
+  id: string;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  recordedBy: Person;
+  notes?: string;
+  transactionId?: string;
+}
+
+export interface BorrowLendRecord {
+  id: string;
+  type: BorrowLendType; // 'lend' = money given (to receive), 'borrow' = money taken (to pay back)
+  personName: string;
+  phone?: string;
+  amount: number;
+  paidAmount: number;
+  date: string; // YYYY-MM-DD
+  dueDate?: string; // YYYY-MM-DD
+  handledBy: Person;
+  status: 'pending' | 'settled';
+  notes?: string;
+  reminderEnabled: boolean;
+  payments?: BorrowLendPayment[];
   createdAt: string;
   updatedAt?: string;
 }

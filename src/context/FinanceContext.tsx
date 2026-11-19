@@ -1,12 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback, ReactNode } from 'react';
 import {
   BankAccount,
+  BorrowLendPayment,
+  BorrowLendRecord,
   CashWallet,
   CategoryBudget,
   CustomCategory,
   DailyNote,
   DashboardView,
   FinancialSummary,
+  HealthInsurancePolicy,
   Loan,
   PaymentFrequency,
   Person,
@@ -25,11 +28,16 @@ import {
 import { getCurrentMonthStr, getTodayISO } from '../utils/formatters';
 import {
   AppNotificationPayload,
+  checkAndTriggerBorrowLendReminders,
   checkAndTriggerEmiReminders,
+  checkAndTriggerFirstOfMonthCommitmentNotification,
+  checkAndTriggerInsuranceReminders,
   checkAndTriggerNoteReminders,
   formatNewNoteNotification,
   formatNoteCompletedNotification,
   formatTransactionNotification,
+  getLoanFrequency,
+  getLoanScheduledPaymentAmount,
   getMsUntilNextEmiSlot,
   getOrCreateDeviceId,
   isNotificationSoundEnabled,
@@ -90,6 +98,8 @@ interface FinanceContextType {
   categoryColors: Record<string, string>;
   categoryBudgets: CategoryBudget[];
   dailyNotes: DailyNote[];
+  healthInsurances: HealthInsurancePolicy[];
+  borrowLendRecords: BorrowLendRecord[];
   isLiveSyncing: boolean;
   defaultBankAccount: BankAccount | undefined;
   jointSavingsAccounts: BankAccount[];
@@ -128,6 +138,40 @@ interface FinanceContextType {
   editDailyNote: (id: string, updated: Partial<DailyNote>) => void;
   deleteDailyNote: (id: string) => void;
   toggleDailyNoteComplete: (id: string) => void;
+
+  addHealthInsurance: (policy: Omit<HealthInsurancePolicy, 'id' | 'createdAt'>) => HealthInsurancePolicy;
+  editHealthInsurance: (id: string, updated: Partial<HealthInsurancePolicy>) => void;
+  deleteHealthInsurance: (id: string) => void;
+  recordInsurancePayment: (params: {
+    policyId: string;
+    amount: number;
+    paidBy: Person;
+    paymentMethod: 'bank' | 'cash';
+    accountId?: string;
+    date: string;
+    notes?: string;
+  }) => void;
+
+  addBorrowLendRecord: (
+    record: Omit<BorrowLendRecord, 'id' | 'createdAt'>,
+    ledgerOptions?: {
+      recordInAccounts?: boolean;
+      paymentMethod?: 'bank' | 'cash';
+      accountId?: string;
+    }
+  ) => BorrowLendRecord;
+  editBorrowLendRecord: (id: string, updated: Partial<BorrowLendRecord>) => void;
+  deleteBorrowLendRecord: (id: string) => void;
+  recordBorrowLendRepayment: (params: {
+    recordId: string;
+    amount: number;
+    date: string;
+    recordedBy: Person;
+    notes?: string;
+    recordInAccounts?: boolean;
+    paymentMethod?: 'bank' | 'cash';
+    accountId?: string;
+  }) => void;
 
   addCustomCategory: (name: string, type: 'expense' | 'income', color?: string) => CustomCategory;
   setCategoryColor: (category: string, color: string) => void;
@@ -184,6 +228,8 @@ const STORAGE_KEYS = {
   CATEGORY_COLORS: 'anson_dona_category_colors_v7',
   BUDGETS: 'anson_dona_budgets_v6_safe',
   DAILY_NOTES: 'anson_dona_daily_notes_v1',
+  HEALTH_INSURANCE: 'anson_dona_health_insurance_v1',
+  BORROW_LEND: 'anson_dona_borrow_lend_v1',
   IS_LOGGED_IN: 'anson_dona_is_logged_in_v6_safe',
   NOTIFY_PARTNER: 'anson_dona_notify_partner_v1',
   NOTIFY_EMI: 'anson_dona_notify_emi_v1',
@@ -437,6 +483,26 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   });
 
+  // 10. Health Insurance Policies
+  const [healthInsurances, setHealthInsurances] = useState<HealthInsurancePolicy[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.HEALTH_INSURANCE);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // 11. Borrowing & Lending Records
+  const [borrowLendRecords, setBorrowLendRecords] = useState<BorrowLendRecord[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.BORROW_LEND);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const seenNoteIdsRef = useRef<Set<string>>(new Set());
   const prevNoteCompletedMapRef = useRef<Map<string, boolean>>(new Map());
 
@@ -500,6 +566,18 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       localStorage.setItem(STORAGE_KEYS.DAILY_NOTES, JSON.stringify(dailyNotes));
     } catch {}
   }, [dailyNotes]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.HEALTH_INSURANCE, JSON.stringify(healthInsurances));
+    } catch {}
+  }, [healthInsurances]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.BORROW_LEND, JSON.stringify(borrowLendRecords));
+    } catch {}
+  }, [borrowLendRecords]);
 
   useEffect(() => {
     try {
@@ -822,6 +900,50 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         }
       );
       unsubs.push(unsubNotes);
+
+      // 10. Health Insurance Policies Live Listener
+      const unsubHealthIns = onSnapshot(
+        collection(db, 'health_insurance'),
+        (snapshot) => {
+          const livePolicies: HealthInsurancePolicy[] = [];
+          snapshot.forEach((docSnap) => {
+            livePolicies.push({ ...docSnap.data(), id: docSnap.id } as HealthInsurancePolicy);
+          });
+          livePolicies.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+          setHealthInsurances(livePolicies);
+          try {
+            localStorage.setItem(STORAGE_KEYS.HEALTH_INSURANCE, JSON.stringify(livePolicies));
+          } catch {}
+        },
+        (error) => {
+          console.warn('Firestore live health insurance sync error:', error);
+        }
+      );
+      unsubs.push(unsubHealthIns);
+
+      // 11. Borrow & Lend Records Live Listener
+      const unsubBorrowLend = onSnapshot(
+        collection(db, 'borrow_lend_records'),
+        (snapshot) => {
+          const liveRecords: BorrowLendRecord[] = [];
+          snapshot.forEach((docSnap) => {
+            liveRecords.push({ ...docSnap.data(), id: docSnap.id } as BorrowLendRecord);
+          });
+          liveRecords.sort(
+            (a, b) =>
+              (b.date || '').localeCompare(a.date || '') ||
+              (b.createdAt || '').localeCompare(a.createdAt || '')
+          );
+          setBorrowLendRecords(liveRecords);
+          try {
+            localStorage.setItem(STORAGE_KEYS.BORROW_LEND, JSON.stringify(liveRecords));
+          } catch {}
+        },
+        (error) => {
+          console.warn('Firestore live borrow/lend sync error:', error);
+        }
+      );
+      unsubs.push(unsubBorrowLend);
     } catch (err) {
       console.warn('Failed to attach Firestore listeners:', err);
     }
@@ -1496,6 +1618,304 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   };
 
+  // Health Insurance Policies & Monthly EMI Management
+  const addHealthInsurance = (
+    policyData: Omit<HealthInsurancePolicy, 'id' | 'createdAt'>
+  ): HealthInsurancePolicy => {
+    const nowIso = new Date().toISOString();
+    const newPolicy: HealthInsurancePolicy = {
+      ...policyData,
+      id: `hins-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+
+    setHealthInsurances((prev) => {
+      const next = [newPolicy, ...prev.filter((p) => p.id !== newPolicy.id)];
+      try {
+        localStorage.setItem(STORAGE_KEYS.HEALTH_INSURANCE, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    setDoc(doc(db, 'health_insurance', newPolicy.id), sanitizeForFirestore(newPolicy)).catch((err) => {
+      console.warn('Failed to sync new health insurance policy to Firestore:', err);
+    });
+
+    return newPolicy;
+  };
+
+  const editHealthInsurance = (id: string, updated: Partial<HealthInsurancePolicy>) => {
+    setHealthInsurances((prev) => {
+      const next = prev.map((p) => {
+        if (p.id === id) {
+          const mod: HealthInsurancePolicy = {
+            ...p,
+            ...updated,
+            updatedAt: new Date().toISOString(),
+          };
+          setDoc(doc(db, 'health_insurance', id), sanitizeForFirestore(mod)).catch(() => {});
+          return mod;
+        }
+        return p;
+      });
+      try {
+        localStorage.setItem(STORAGE_KEYS.HEALTH_INSURANCE, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const deleteHealthInsurance = (id: string) => {
+    setHealthInsurances((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      try {
+        localStorage.setItem(STORAGE_KEYS.HEALTH_INSURANCE, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    deleteDoc(doc(db, 'health_insurance', id)).catch((err) => {
+      console.warn('Failed to delete health insurance policy in Firestore:', err);
+    });
+  };
+
+  const recordInsurancePayment = ({
+    policyId,
+    amount,
+    paidBy,
+    paymentMethod,
+    accountId,
+    date,
+    notes,
+  }: {
+    policyId: string;
+    amount: number;
+    paidBy: Person;
+    paymentMethod: 'bank' | 'cash';
+    accountId?: string;
+    date: string;
+    notes?: string;
+  }) => {
+    const policy = healthInsurances.find((p) => p.id === policyId);
+    const freqLabel =
+      policy?.paymentFrequency === 'yearly'
+        ? 'Yearly'
+        : policy?.paymentFrequency === 'quarterly'
+        ? 'Quarterly'
+        : 'Monthly';
+
+    addTransaction({
+      type: 'expense',
+      title: policy
+        ? `${policy.policyName} — Health Insurance ${freqLabel} EMI`
+        : 'Health Insurance EMI',
+      amount,
+      date,
+      person: paidBy || currentUser,
+      category: 'insurance',
+      paymentMethod,
+      fromAccountId: paymentMethod === 'bank' ? accountId : undefined,
+      fromCashPerson: paymentMethod === 'cash' ? (paidBy || currentUser) : undefined,
+      insurancePolicyId: policyId,
+      paymentFrequency: policy?.paymentFrequency || 'monthly',
+      notes: notes || (policy ? `${policy.insurer} · ${policy.coveredMembers}` : 'Health insurance EMI'),
+    });
+  };
+
+  // Borrowing & Lending Money Management
+  const addBorrowLendRecord = (
+    recordData: Omit<BorrowLendRecord, 'id' | 'createdAt'>,
+    ledgerOptions?: {
+      recordInAccounts?: boolean;
+      paymentMethod?: 'bank' | 'cash';
+      accountId?: string;
+    }
+  ): BorrowLendRecord => {
+    const nowIso = new Date().toISOString();
+    const paidAmt = Math.max(0, Number(recordData.paidAmount) || 0);
+    const totalAmt = Math.max(0, Number(recordData.amount) || 0);
+    const computedStatus: 'pending' | 'settled' = paidAmt >= totalAmt && totalAmt > 0 ? 'settled' : recordData.status || 'pending';
+
+    const newRecord: BorrowLendRecord = {
+      ...recordData,
+      amount: totalAmt,
+      paidAmount: paidAmt,
+      status: computedStatus,
+      payments: recordData.payments || [],
+      id: `bl-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+
+    setBorrowLendRecords((prev) => {
+      const next = [newRecord, ...prev.filter((r) => r.id !== newRecord.id)];
+      try {
+        localStorage.setItem(STORAGE_KEYS.BORROW_LEND, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    setDoc(doc(db, 'borrow_lend_records', newRecord.id), sanitizeForFirestore(newRecord)).catch((err) => {
+      console.warn('Failed to sync new borrow/lend record to Firestore:', err);
+    });
+
+    if (ledgerOptions?.recordInAccounts && totalAmt > 0) {
+      const pm = ledgerOptions.paymentMethod || 'bank';
+      const accId = pm === 'bank' ? ledgerOptions.accountId : undefined;
+      if (newRecord.type === 'lend') {
+        addTransaction({
+          type: 'expense',
+          title: `Lent Money to ${newRecord.personName}`,
+          amount: totalAmt,
+          date: newRecord.date,
+          person: newRecord.handledBy || currentUser,
+          category: 'family',
+          paymentMethod: pm,
+          fromAccountId: accId,
+          fromCashPerson: pm === 'cash' ? (newRecord.handledBy || currentUser) : undefined,
+          borrowLendId: newRecord.id,
+          notes: newRecord.notes || `Money lent to ${newRecord.personName}`,
+        });
+      } else {
+        addTransaction({
+          type: 'income',
+          title: `Borrowed Money from ${newRecord.personName}`,
+          amount: totalAmt,
+          date: newRecord.date,
+          person: newRecord.handledBy || currentUser,
+          category: 'other',
+          paymentMethod: pm,
+          toAccountId: accId,
+          toCashPerson: pm === 'cash' ? (newRecord.handledBy || currentUser) : undefined,
+          borrowLendId: newRecord.id,
+          notes: newRecord.notes || `Money borrowed from ${newRecord.personName}`,
+        });
+      }
+    }
+
+    return newRecord;
+  };
+
+  const editBorrowLendRecord = (id: string, updated: Partial<BorrowLendRecord>) => {
+    setBorrowLendRecords((prev) => {
+      const next = prev.map((r) => {
+        if (r.id === id) {
+          const mergedAmt = updated.amount !== undefined ? updated.amount : r.amount;
+          const mergedPaid = updated.paidAmount !== undefined ? updated.paidAmount : r.paidAmount;
+          const nextStatus: 'pending' | 'settled' =
+            updated.status !== undefined
+              ? updated.status
+              : mergedPaid >= mergedAmt && mergedAmt > 0
+              ? 'settled'
+              : 'pending';
+          const mod: BorrowLendRecord = {
+            ...r,
+            ...updated,
+            amount: mergedAmt,
+            paidAmount: mergedPaid,
+            status: nextStatus,
+            updatedAt: new Date().toISOString(),
+          };
+          setDoc(doc(db, 'borrow_lend_records', id), sanitizeForFirestore(mod)).catch(() => {});
+          return mod;
+        }
+        return r;
+      });
+      try {
+        localStorage.setItem(STORAGE_KEYS.BORROW_LEND, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const deleteBorrowLendRecord = (id: string) => {
+    setBorrowLendRecords((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      try {
+        localStorage.setItem(STORAGE_KEYS.BORROW_LEND, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    deleteDoc(doc(db, 'borrow_lend_records', id)).catch((err) => {
+      console.warn('Failed to delete borrow/lend record in Firestore:', err);
+    });
+  };
+
+  const recordBorrowLendRepayment = ({
+    recordId,
+    amount,
+    date,
+    recordedBy,
+    notes,
+    recordInAccounts,
+    paymentMethod = 'bank',
+    accountId,
+  }: {
+    recordId: string;
+    amount: number;
+    date: string;
+    recordedBy: Person;
+    notes?: string;
+    recordInAccounts?: boolean;
+    paymentMethod?: 'bank' | 'cash';
+    accountId?: string;
+  }) => {
+    const rec = borrowLendRecords.find((r) => r.id === recordId);
+    if (!rec || amount <= 0) return;
+
+    let linkedTxId: string | undefined;
+    if (recordInAccounts) {
+      const tx =
+        rec.type === 'lend'
+          ? addTransaction({
+              type: 'income',
+              title: `Money Returned by ${rec.personName}`,
+              amount,
+              date,
+              person: recordedBy || currentUser,
+              category: 'other',
+              paymentMethod,
+              toAccountId: paymentMethod === 'bank' ? accountId : undefined,
+              toCashPerson: paymentMethod === 'cash' ? (recordedBy || currentUser) : undefined,
+              borrowLendId: rec.id,
+              notes: notes || `Repayment received from ${rec.personName}`,
+            })
+          : addTransaction({
+              type: 'expense',
+              title: `Repaid Borrowed Money to ${rec.personName}`,
+              amount,
+              date,
+              person: recordedBy || currentUser,
+              category: 'family',
+              paymentMethod,
+              fromAccountId: paymentMethod === 'bank' ? accountId : undefined,
+              fromCashPerson: paymentMethod === 'cash' ? (recordedBy || currentUser) : undefined,
+              borrowLendId: rec.id,
+              notes: notes || `Repayment paid to ${rec.personName}`,
+            });
+      linkedTxId = tx.id;
+    }
+
+    const paymentEntry: BorrowLendPayment = {
+      id: `blp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      amount,
+      date,
+      recordedBy: recordedBy || currentUser,
+      notes: notes?.trim() || undefined,
+      transactionId: linkedTxId,
+    };
+
+    const nextPaid = Math.min(rec.amount, (rec.paidAmount || 0) + amount);
+    const nextStatus: 'pending' | 'settled' = nextPaid >= rec.amount ? 'settled' : 'pending';
+    const nextPayments = [paymentEntry, ...(rec.payments || [])];
+
+    editBorrowLendRecord(recordId, {
+      paidAmount: nextPaid,
+      status: nextStatus,
+      payments: nextPayments,
+    });
+  };
+
   // Custom Categories
   const setCategoryColor = (category: string, color: string) => {
     const cleanCat = category.toLowerCase().trim();
@@ -1750,7 +2170,9 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       (sum, l) => sum + l.outstandingPrincipal,
       0
     );
-    const monthlyEmiCommitment = relevantLoans.reduce((sum, l) => sum + l.monthlyEmi, 0);
+    const monthlyEmiCommitment = relevantLoans
+      .filter((l) => getLoanFrequency(l) === 'monthly')
+      .reduce((sum, l) => sum + getLoanScheduledPaymentAmount(l, 'monthly'), 0);
 
     return {
       totalIncome,
@@ -1799,7 +2221,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   // Export & Import
   const exportBackupJSON = () => {
     const backupData = {
-      version: '3.1',
+      version: '3.2',
       exportedAt: new Date().toISOString(),
       bankAccounts,
       cashWallets,
@@ -1807,6 +2229,8 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       transactions,
       customCategories,
       dailyNotes,
+      healthInsurances,
+      borrowLendRecords,
       users,
     };
     const blob = new Blob([JSON.stringify(backupData, null, 2)], {
@@ -1823,7 +2247,13 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   const importBackupJSON = (jsonStr: string): boolean => {
     try {
       const data = JSON.parse(jsonStr);
-      if (Array.isArray(data.transactions) || Array.isArray(data.bankAccounts) || Array.isArray(data.dailyNotes)) {
+      if (
+        Array.isArray(data.transactions) ||
+        Array.isArray(data.bankAccounts) ||
+        Array.isArray(data.dailyNotes) ||
+        Array.isArray(data.healthInsurances) ||
+        Array.isArray(data.borrowLendRecords)
+      ) {
         if (data.bankAccounts) {
           setBankAccounts(data.bankAccounts);
           data.bankAccounts.forEach((acc: BankAccount) => setDoc(doc(db, 'bank_accounts', acc.id), sanitizeForFirestore(acc)).catch(() => {}));
@@ -1847,6 +2277,14 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         if (data.dailyNotes) {
           setDailyNotes(data.dailyNotes);
           data.dailyNotes.forEach((n: DailyNote) => setDoc(doc(db, 'daily_notes', n.id), sanitizeForFirestore(n)).catch(() => {}));
+        }
+        if (data.healthInsurances) {
+          setHealthInsurances(data.healthInsurances);
+          data.healthInsurances.forEach((p: HealthInsurancePolicy) => setDoc(doc(db, 'health_insurance', p.id), sanitizeForFirestore(p)).catch(() => {}));
+        }
+        if (data.borrowLendRecords) {
+          setBorrowLendRecords(data.borrowLendRecords);
+          data.borrowLendRecords.forEach((r: BorrowLendRecord) => setDoc(doc(db, 'borrow_lend_records', r.id), sanitizeForFirestore(r)).catch(() => {}));
         }
         if (data.users) setUsers(data.users);
         return true;
@@ -1904,6 +2342,8 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     loans.forEach((l) => deleteDoc(doc(db, 'loans', l.id)).catch(() => {}));
     customCategories.forEach((c) => deleteDoc(doc(db, 'custom_categories', c.id)).catch(() => {}));
     dailyNotes.forEach((n) => deleteDoc(doc(db, 'daily_notes', n.id)).catch(() => {}));
+    healthInsurances.forEach((p) => deleteDoc(doc(db, 'health_insurance', p.id)).catch(() => {}));
+    borrowLendRecords.forEach((r) => deleteDoc(doc(db, 'borrow_lend_records', r.id)).catch(() => {}));
 
     setDoc(doc(db, 'cash_wallets', 'Anson'), { owner: 'Anson', balance: 0, lastUpdated: getTodayISO() }).catch(() => {});
     setDoc(doc(db, 'cash_wallets', 'Dona'), { owner: 'Dona', balance: 0, lastUpdated: getTodayISO() }).catch(() => {});
@@ -1914,24 +2354,42 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
     setTransactions(INITIAL_TRANSACTIONS);
     setCustomCategories([]);
     setDailyNotes([]);
+    setHealthInsurances([]);
+    setBorrowLendRecords([]);
     setUsers(INITIAL_USERS);
     setActiveDashboard('Family');
     localStorage.clear();
   };
 
   // ==========================================
-  // EMI DUE DATE REMINDERS (5 DAYS BEFORE & DUE DATE @ 6 AM, 12 PM, 10 PM)
+  // EMI & HEALTH INSURANCE DUE DATE REMINDERS (5 DAYS BEFORE & DUE DATE @ 6 AM, 12 PM, 10 PM)
   // ==========================================
   useEffect(() => {
-    if (!notifyEmiReminders || loans.length === 0) return;
+    if (!notifyEmiReminders || (loans.length === 0 && healthInsurances.length === 0)) return;
 
     const runCheck = () => {
-      checkAndTriggerEmiReminders({
-        loans,
-        transactions,
-        enabled: notifyEmiReminders,
-        onInAppNotify: pushInAppNotificationRef.current,
-      });
+      if (loans.length > 0) {
+        checkAndTriggerEmiReminders({
+          loans,
+          transactions,
+          enabled: notifyEmiReminders,
+          onInAppNotify: pushInAppNotificationRef.current,
+        });
+        checkAndTriggerFirstOfMonthCommitmentNotification({
+          loans,
+          transactions,
+          enabled: notifyEmiReminders,
+          onInAppNotify: pushInAppNotificationRef.current,
+        });
+      }
+      if (healthInsurances.length > 0) {
+        checkAndTriggerInsuranceReminders({
+          policies: healthInsurances,
+          transactions,
+          enabled: notifyEmiReminders,
+          onInAppNotify: pushInAppNotificationRef.current,
+        });
+      }
     };
 
     runCheck();
@@ -1961,20 +2419,29 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       window.removeEventListener('focus', onVisibilityOrFocus);
       document.removeEventListener('visibilitychange', onVisibilityOrFocus);
     };
-  }, [loans, transactions, notifyEmiReminders]);
+  }, [loans, healthInsurances, transactions, notifyEmiReminders]);
 
   // ==========================================
-  // DAILY NOTES, TASKS, BIRTHDAYS & WEDDING DATE REMINDERS
+  // DAILY NOTES, TASKS, SPECIAL DATES & BORROW/LEND DUE REMINDERS
   // ==========================================
   useEffect(() => {
-    if (!notifyNoteReminders || dailyNotes.length === 0) return;
+    if (!notifyNoteReminders || (dailyNotes.length === 0 && borrowLendRecords.length === 0)) return;
 
     const runNoteCheck = () => {
-      checkAndTriggerNoteReminders({
-        notes: dailyNotes,
-        enabled: notifyNoteReminders,
-        onInAppNotify: pushInAppNotificationRef.current,
-      });
+      if (dailyNotes.length > 0) {
+        checkAndTriggerNoteReminders({
+          notes: dailyNotes,
+          enabled: notifyNoteReminders,
+          onInAppNotify: pushInAppNotificationRef.current,
+        });
+      }
+      if (borrowLendRecords.length > 0) {
+        checkAndTriggerBorrowLendReminders({
+          records: borrowLendRecords,
+          enabled: notifyNoteReminders,
+          onInAppNotify: pushInAppNotificationRef.current,
+        });
+      }
     };
 
     runNoteCheck();
@@ -1993,7 +2460,7 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       window.removeEventListener('focus', onVisibilityOrFocus);
       document.removeEventListener('visibilitychange', onVisibilityOrFocus);
     };
-  }, [dailyNotes, notifyNoteReminders]);
+  }, [dailyNotes, borrowLendRecords, notifyNoteReminders]);
 
   return (
     <FinanceContext.Provider
@@ -2020,6 +2487,8 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         categoryColors,
         categoryBudgets,
         dailyNotes,
+        healthInsurances,
+        borrowLendRecords,
         isLiveSyncing,
         defaultBankAccount,
         jointSavingsAccounts,
@@ -2051,6 +2520,14 @@ export const FinanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         editDailyNote,
         deleteDailyNote,
         toggleDailyNoteComplete,
+        addHealthInsurance,
+        editHealthInsurance,
+        deleteHealthInsurance,
+        recordInsurancePayment,
+        addBorrowLendRecord,
+        editBorrowLendRecord,
+        deleteBorrowLendRecord,
+        recordBorrowLendRepayment,
         addCustomCategory,
         setCategoryColor,
         setCategoryBudget,

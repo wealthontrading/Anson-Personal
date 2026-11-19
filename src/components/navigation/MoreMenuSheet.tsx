@@ -1,7 +1,7 @@
 import React from 'react';
 import { useFinance } from '../../context/FinanceContext';
 import { NavTab } from './Sidebar';
-import { Landmark, BarChart3, Target, Settings, Lock, LogOut, X, ChevronRight, CalendarDays, PiggyBank } from 'lucide-react';
+import { Landmark, BarChart3, Target, Settings, Lock, LogOut, X, ChevronRight, CalendarDays, PiggyBank, HeartPulse, HandCoins } from 'lucide-react';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 
 interface MoreMenuSheetProps {
@@ -29,6 +29,24 @@ export const MoreMenuSheet: React.FC<MoreMenuSheetProps> = ({
       color: 'bg-indigo-50 text-indigo-600',
       onClick: () => {
         onSelectTab('emis');
+      },
+    },
+    {
+      label: 'Health Insurance EMI',
+      desc: 'Family health policies, monthly EMI & auto alerts',
+      icon: HeartPulse,
+      color: 'bg-teal-50 text-teal-600',
+      onClick: () => {
+        onSelectTab('insurance');
+      },
+    },
+    {
+      label: 'Borrow & Lend Money',
+      desc: 'Track money given (to receive) & borrowed (to pay)',
+      icon: HandCoins,
+      color: 'bg-amber-50 text-amber-700',
+      onClick: () => {
+        onSelectTab('borrow_lend');
       },
     },
     {
